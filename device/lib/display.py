@@ -4,11 +4,12 @@ from ssd1306 import SSD1306_I2C
 I2C_ID = 0
 SCL_PIN = 22
 SDA_PIN = 21
+I2C_FREQ = 1000000
 WIDTH = 128
 HEIGHT = 64
 FRAME_SIZE = WIDTH * HEIGHT // 8
 
-_oled = SSD1306_I2C(WIDTH, HEIGHT, I2C(I2C_ID, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN)))
+_oled = SSD1306_I2C(WIDTH, HEIGHT, I2C(I2C_ID, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=I2C_FREQ))
 
 
 def show(ip, states):
