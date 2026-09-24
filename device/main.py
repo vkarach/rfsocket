@@ -34,7 +34,6 @@ def connect_wifi():
 def switch(name, action):
     code = config.CHANNELS[name]["on" if action else "off"]
     dy08.send_raw(code[0], code[1])
-    states[name] = action
 
 
 def handle(path):
@@ -60,8 +59,9 @@ def handle(path):
     else:
         return None
 
-    switch(name, action)
+    states[name] = action
     display.show(ip, states)
+    switch(name, action)
     return "on" if action else "off"
 
 
