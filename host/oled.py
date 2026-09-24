@@ -1,7 +1,6 @@
 import argparse
 import itertools
 import os
-import socket
 import sys
 
 import convert
@@ -33,6 +32,7 @@ def parse_args(argv):
 
 def main(argv):
     args = parse_args(argv)
+    stats = sender.PlayStats()
     try:
         source = sources.open_source(args.file)
         dither = args.dither or DEFAULT_DITHER[source.kind]
@@ -41,8 +41,12 @@ def main(argv):
                   for _ in passes for image, duration in source.frames())
         sock = sender.connect(args.host, args.port)
         try:
-            stats = sender.play(sock, frames)
-            sock.shutdown(socket.SHUT_WR)
+            sender.play(sock, frames, stats=stats)
+            # The device drops back to the status screen on disconnect, so a still image keeps the link open.
+            if source.kind == "image":
+                sender.hold(sock)
+        except KeyboardInterrupt:
+            pass
         finally:
             sock.close()
     except (sources.SourceError, sender.SenderError) as exc:

@@ -1,4 +1,6 @@
 import socket
+import threading
+import time
 
 import pytest
 
@@ -78,6 +80,17 @@ def test_send_failure_becomes_connection_lost():
 
     with pytest.raises(sender.SenderError, match="connection lost"):
         play(sock, numbered_frames(3, 0.1), clock)
+
+
+def test_hold_returns_when_peer_closes():
+    ours, theirs = socket.socketpair()
+    threading.Timer(0.3, theirs.close).start()
+
+    started = time.monotonic()
+    sender.hold(ours, poll=0.1)
+
+    assert 0.25 <= time.monotonic() - started < 2
+    ours.close()
 
 
 def test_connect_to_closed_port_raises_with_address():

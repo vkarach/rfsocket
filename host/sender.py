@@ -26,8 +26,21 @@ def connect(host, port, timeout=5.0):
     return sock
 
 
-def play(sock, frames, clock=time.monotonic, sleep=time.sleep):
-    stats = PlayStats()
+def hold(sock, poll=0.5):
+    # Short polls keep Ctrl+C responsive on Windows, where a blocking recv ignores it.
+    sock.settimeout(poll)
+    while True:
+        try:
+            if not sock.recv(1):
+                return
+        except socket.timeout:
+            continue
+        except OSError:
+            return
+
+
+def play(sock, frames, clock=time.monotonic, sleep=time.sleep, stats=None):
+    stats = stats if stats is not None else PlayStats()
     frames = iter(frames)
     current = next(frames, _END)
     start = clock()

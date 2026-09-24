@@ -1,5 +1,7 @@
+import re
 import socket
 import threading
+import time
 
 import pytest
 from PIL import Image
@@ -12,8 +14,9 @@ from test_sources import make_gif
 
 
 class FakeDevice:
-    def __init__(self, close_after=None):
+    def __init__(self, close_after=None, close_delay=0.0):
         self.close_after = close_after
+        self.close_delay = close_delay
         self.messages = []
         self.server = socket.create_server(("127.0.0.1", 0))
         self.port = self.server.getsockname()[1]
@@ -37,6 +40,7 @@ class FakeDevice:
                 if header is None:
                     break
                 self.messages.append((header[0], self._recv_exact(conn, protocol.FRAME_SIZE)))
+            time.sleep(self.close_delay)
         self.server.close()
 
     def wait(self):
@@ -56,13 +60,47 @@ def run_main(argv):
 def test_png_sends_one_converted_frame(tmp_path):
     path = tmp_path / "pic.png"
     Image.new("RGB", (80, 40), (255, 255, 255)).save(path)
-    device = FakeDevice()
+    device = FakeDevice(close_after=1)
 
     code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port)])
 
     expected = convert.to_frame(Image.open(path), "fit", "fs", False)
     assert code == 0
     assert device.wait() == [(protocol.MSG_FRAME, expected)]
+
+
+def test_png_holds_connection_until_device_closes(tmp_path, capsys):
+    path = tmp_path / "pic.png"
+    Image.new("L", (8, 8), 255).save(path)
+    device = FakeDevice(close_after=1, close_delay=0.6)
+
+    started = time.monotonic()
+    code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port)])
+
+    assert code == 0
+    assert time.monotonic() - started >= 0.5
+    assert "sent 1, dropped 0" in capsys.readouterr().out
+
+
+def test_loop_interrupted_still_prints_stats(tmp_path, capsys, monkeypatch):
+    path = make_gif(tmp_path / "anim.gif", [20, 20, 20])
+    device = FakeDevice()
+    real_to_frame = convert.to_frame
+    calls = []
+
+    def interrupt_after_five(*args):
+        calls.append(None)
+        if len(calls) > 5:
+            raise KeyboardInterrupt
+        return real_to_frame(*args)
+
+    monkeypatch.setattr(oled.convert, "to_frame", interrupt_after_five)
+
+    code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port), "--loop"])
+
+    match = re.search(r"sent (\d+), dropped (\d+)", capsys.readouterr().out)
+    assert code == 0
+    assert match and int(match.group(1)) >= 1
 
 
 def test_gif_sends_frames_in_order(tmp_path):
