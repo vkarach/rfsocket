@@ -1,5 +1,5 @@
+import asyncio
 import network
-import socket
 import time
 
 import config
@@ -65,30 +65,32 @@ def handle(path):
     return "on" if action else "off"
 
 
-def serve():
-    address = socket.getaddrinfo("0.0.0.0", HTTP_PORT)[0][-1]
-    server = socket.socket()
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(address)
-    server.listen(1)
+async def serve_client(reader, writer):
+    try:
+        request = (await reader.read(256)).decode()
+        path = request.split(" ")[1] if " " in request else ""
+        body = handle(path)
+        if body is None:
+            response = RESPONSE_TEMPLATE.format(status="404 Not Found", body="unknown command")
+        else:
+            response = RESPONSE_TEMPLATE.format(status="200 OK", body=body)
+        writer.write(response.encode())
+        await writer.drain()
+    except Exception as exc:
+        print("request failed:", exc)
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
+
+async def main():
+    global ip
+    ip = connect_wifi()
+    print("ip:", ip)
+    display.show(ip, states)
+    await asyncio.start_server(serve_client, "0.0.0.0", HTTP_PORT)
     while True:
-        client, _ = server.accept()
-        try:
-            request = client.recv(256).decode()
-            path = request.split(" ")[1] if " " in request else ""
-            body = handle(path)
-            if body is None:
-                client.send(RESPONSE_TEMPLATE.format(status="404 Not Found", body="unknown command"))
-            else:
-                client.send(RESPONSE_TEMPLATE.format(status="200 OK", body=body))
-        except Exception as exc:
-            print("request failed:", exc)
-        finally:
-            client.close()
+        await asyncio.sleep(3600)
 
 
-ip = connect_wifi()
-print("ip:", ip)
-display.show(ip, states)
-serve()
+asyncio.run(main())
