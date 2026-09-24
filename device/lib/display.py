@@ -10,9 +10,30 @@ HEIGHT = 64
 FRAME_SIZE = WIDTH * HEIGHT // 8
 
 _oled = SSD1306_I2C(WIDTH, HEIGHT, I2C(I2C_ID, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=I2C_FREQ))
+_status = None
+_streaming = False
 
 
 def show(ip, states):
+    global _status
+    _status = (ip, states)
+    if not _streaming:
+        _draw_status(ip, states)
+
+
+def begin_stream():
+    global _streaming
+    _streaming = True
+
+
+def end_stream():
+    global _streaming
+    _streaming = False
+    if _status is not None:
+        _draw_status(*_status)
+
+
+def _draw_status(ip, states):
     _oled.fill(0)
     _oled.text("rfsocket", 0, 0)
 

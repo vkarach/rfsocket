@@ -30,6 +30,7 @@ async def _serve_client(reader, writer):
         _current.cancel()
     task = asyncio.current_task()
     _current = task
+    display.begin_stream()
     try:
         while await _read_exact(reader, _header_view):
             if _header[0] != MSG_FRAME:
@@ -42,6 +43,7 @@ async def _serve_client(reader, writer):
     finally:
         if _current is task:
             _current = None
+            display.end_stream()
         await writer.wait_closed()
 
 
