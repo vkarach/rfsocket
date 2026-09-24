@@ -57,3 +57,18 @@ def build_frame(address, action):
 def send(address, action):
     send_pulses(build_frame(address, action), repeat=1)
     time.sleep_us(GAP_US)
+
+
+def send_raw(first_word, second_word):
+    first = [(first_word >> 16) & 0xFF, (first_word >> 8) & 0xFF, first_word & 0xFF]
+    second = [(second_word >> 24) & 0xFF, (second_word >> 16) & 0xFF,
+              (second_word >> 8) & 0xFF, second_word & 0xFF]
+
+    pulses = []
+    _add_block(pulses, first, FIRST_REPEATS, FIRST_HEADER_US,
+               FIRST_SHORT_US, FIRST_LONG_US)
+    _add_block(pulses, second, SECOND_REPEATS, SECOND_HEADER_US,
+               SECOND_SHORT_US, SECOND_LONG_US)
+
+    send_pulses(pulses, repeat=1)
+    time.sleep_us(GAP_US)

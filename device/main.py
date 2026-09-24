@@ -3,8 +3,8 @@ import socket
 import time
 
 import config
-import dy08
 import display
+import dy08
 
 HTTP_PORT = 80
 
@@ -16,7 +16,7 @@ RESPONSE_TEMPLATE = (
     "{body}"
 )
 
-state = 0
+states = {name: 0 for name in config.CHANNELS}
 ip = ""
 
 
@@ -31,31 +31,38 @@ def connect_wifi():
     return wlan.ifconfig()[0]
 
 
+def switch(name, action):
+    code = config.CHANNELS[name]["on" if action else "off"]
+    dy08.send_raw(code[0], code[1])
+    states[name] = action
+
+
 def handle(path):
-    global state
+    parts = [part for part in path.split("/") if part]
 
+    if parts == ["state"]:
+        return " ".join("%s:%s" % (name, "on" if states[name] else "off")
+                        for name in sorted(states))
 
-    if path == "/on":
-        state = 1
-    elif path == "/off":
-        state = 0
-    elif path == "/toggle":
-        state = 0 if state else 1
-    elif path == "/state":
-        return "on" if state else "off"
-    elif path == "/pair":
-        for _ in range(5):
-            dy08.send(config.SOCKET_ADDRESS, state)
-            display.show(ip, state)
-            return "on" if state else "off"
-        state = 1
-        return "paired"
+    if len(parts) != 2:
+        return None
+
+    name, command = parts[0].lower(), parts[1].lower()
+    if name not in config.CHANNELS:
+        return None
+
+    if command == "on":
+        action = 1
+    elif command == "off":
+        action = 0
+    elif command == "toggle":
+        action = 0 if states[name] else 1
     else:
         return None
 
-    dy08.send(config.SOCKET_ADDRESS, state)
-    display.show(ip, state)
-    return "on" if state else "off"
+    switch(name, action)
+    display.show(ip, states)
+    return "on" if action else "off"
 
 
 def serve():
@@ -83,5 +90,5 @@ def serve():
 
 ip = connect_wifi()
 print("ip:", ip)
-display.show(ip, state)
+display.show(ip, states)
 serve()

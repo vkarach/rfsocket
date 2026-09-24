@@ -10,9 +10,14 @@ HEIGHT = 64
 _oled = SSD1306_I2C(WIDTH, HEIGHT, I2C(I2C_ID, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN)))
 
 
-def show(ip, state):
+def show(ip, states):
     _oled.fill(0)
     _oled.text("rfsocket", 0, 0)
-    _oled.text("socket: " + ("on" if state else "off"), 0, 20)
-    _oled.text(ip, 0, 40)
+
+    row = 18
+    for name in sorted(states):
+        _oled.text("%s: %s" % (name.upper(), "on" if states[name] else "off"), 0, row)
+        row += 12
+
+    _oled.text(ip, 0, 56)
     _oled.show()
