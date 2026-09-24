@@ -1,4 +1,4 @@
-import time
+import asyncio
 
 from rf import send_pulses
 
@@ -14,6 +14,8 @@ SECOND_HEADER_US = 7292
 SECOND_REPEATS = 2
 
 GAP_US = 59400
+
+_lock = asyncio.Lock()
 
 
 def _add_byte(pulses, byte, short_us, long_us):
@@ -54,12 +56,17 @@ def build_frame(address, action):
     return pulses
 
 
-def send(address, action):
-    send_pulses(build_frame(address, action), repeat=1)
-    time.sleep_us(GAP_US)
+async def _transmit(pulses):
+    async with _lock:
+        await send_pulses(pulses, repeat=1)
+        await asyncio.sleep_ms(GAP_US // 1000)
 
 
-def send_raw(first_word, second_word):
+async def send(address, action):
+    await _transmit(build_frame(address, action))
+
+
+async def send_raw(first_word, second_word):
     first = [(first_word >> 16) & 0xFF, (first_word >> 8) & 0xFF, first_word & 0xFF]
     second = [(second_word >> 24) & 0xFF, (second_word >> 16) & 0xFF,
               (second_word >> 8) & 0xFF, second_word & 0xFF]
@@ -70,5 +77,4 @@ def send_raw(first_word, second_word):
     _add_block(pulses, second, SECOND_REPEATS, SECOND_HEADER_US,
                SECOND_SHORT_US, SECOND_LONG_US)
 
-    send_pulses(pulses, repeat=1)
-    time.sleep_us(GAP_US)
+    await _transmit(pulses)

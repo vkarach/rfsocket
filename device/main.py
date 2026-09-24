@@ -32,12 +32,12 @@ def connect_wifi():
     return wlan.ifconfig()[0]
 
 
-def switch(name, action):
+async def switch(name, action):
     code = config.CHANNELS[name]["on" if action else "off"]
-    dy08.send_raw(code[0], code[1])
+    await dy08.send_raw(code[0], code[1])
 
 
-def handle(path):
+async def handle(path):
     parts = [part for part in path.split("/") if part]
 
     if parts == ["state"]:
@@ -62,7 +62,7 @@ def handle(path):
 
     states[name] = action
     display.show(ip, states)
-    switch(name, action)
+    await switch(name, action)
     return "on" if action else "off"
 
 
@@ -70,7 +70,7 @@ async def serve_client(reader, writer):
     try:
         request = (await reader.read(256)).decode()
         path = request.split(" ")[1] if " " in request else ""
-        body = handle(path)
+        body = await handle(path)
         if body is None:
             response = RESPONSE_TEMPLATE.format(status="404 Not Found", body="unknown command")
         else:
