@@ -4,6 +4,7 @@ import time
 
 import config
 import dy08
+import display
 
 HTTP_PORT = 80
 
@@ -16,6 +17,7 @@ RESPONSE_TEMPLATE = (
 )
 
 state = 0
+ip = ""
 
 
 def connect_wifi():
@@ -43,13 +45,16 @@ def handle(path):
         return "on" if state else "off"
     elif path == "/pair":
         for _ in range(5):
-            dy08.send(config.SOCKET_ADDRESS, 1)
+            dy08.send(config.SOCKET_ADDRESS, state)
+            display.show(ip, state)
+            return "on" if state else "off"
         state = 1
         return "paired"
     else:
         return None
 
     dy08.send(config.SOCKET_ADDRESS, state)
+    display.show(ip, state)
     return "on" if state else "off"
 
 
@@ -76,5 +81,7 @@ def serve():
             client.close()
 
 
-print("ip:", connect_wifi())
+ip = connect_wifi()
+print("ip:", ip)
+display.show(ip, state)
 serve()
