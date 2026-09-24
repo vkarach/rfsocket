@@ -5,6 +5,7 @@ import time
 import config
 import display
 import dy08
+import stream
 
 HTTP_PORT = 80
 
@@ -89,6 +90,7 @@ async def main():
     print("ip:", ip)
     display.show(ip, states)
     await asyncio.start_server(serve_client, "0.0.0.0", HTTP_PORT)
+    await stream.serve(config.STREAM_PORT)
     while True:
         await asyncio.sleep(3600)
 

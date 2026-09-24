@@ -6,6 +6,7 @@ SCL_PIN = 22
 SDA_PIN = 21
 WIDTH = 128
 HEIGHT = 64
+FRAME_SIZE = WIDTH * HEIGHT // 8
 
 _oled = SSD1306_I2C(WIDTH, HEIGHT, I2C(I2C_ID, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN)))
 
@@ -20,4 +21,9 @@ def show(ip, states):
         row += 12
 
     _oled.text(ip, 0, 56)
+    _oled.show()
+
+
+def show_frame(frame):
+    _oled.buffer[:] = frame
     _oled.show()
