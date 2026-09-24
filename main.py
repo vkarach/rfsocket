@@ -32,6 +32,7 @@ def connect_wifi():
 def handle(path):
     global state
 
+
     if path == "/on":
         state = 1
     elif path == "/off":
@@ -40,6 +41,11 @@ def handle(path):
         state = 0 if state else 1
     elif path == "/state":
         return "on" if state else "off"
+    elif path == "/pair":
+        for _ in range(5):
+            dy08.send(config.SOCKET_ADDRESS, 1)
+        state = 1
+        return "paired"
     else:
         return None
 
