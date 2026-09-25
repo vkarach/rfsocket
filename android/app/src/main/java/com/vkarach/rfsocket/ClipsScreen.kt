@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClipsScreen(model: DeviceModel, state: DeviceState) {
+fun ClipsScreen(model: DeviceModel, state: DeviceState, onPickFile: () -> Unit) {
     var starredOnly by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Clip?>(null) }
     val snackbar = remember { SnackbarHostState() }
@@ -71,14 +71,22 @@ fun ClipsScreen(model: DeviceModel, state: DeviceState) {
             .background(Brush.verticalGradient(listOf(Palette.BackgroundTop, Palette.Background)))
             .safeDrawingPadding(),
     ) {
-        Text(
-            text = "CLIPS",
-            color = Palette.Muted,
-            fontSize = 13.sp,
-            letterSpacing = 3.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(start = 20.dp, top = 20.dp),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 12.dp, end = 8.dp),
+        ) {
+            Text(
+                text = "CLIPS",
+                color = Palette.Muted,
+                fontSize = 13.sp,
+                letterSpacing = 3.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onPickFile) {
+                Icon(painterResource(R.drawable.ic_add), contentDescription = "Stream a file", tint = Palette.Amber)
+            }
+        }
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .fillMaxWidth()

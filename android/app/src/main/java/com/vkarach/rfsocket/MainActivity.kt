@@ -10,12 +10,10 @@ import androidx.activity.viewModels
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 
-private const val BASE_URL = "http://192.168.0.240"
-
 class MainActivity : ComponentActivity() {
 
     private val model by viewModels<DeviceModel> {
-        viewModelFactory { initializer { DeviceModel(SocketClient(BASE_URL)) } }
+        viewModelFactory { initializer { DeviceModel(SocketClient(DEVICE_HTTP_URL)) } }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
