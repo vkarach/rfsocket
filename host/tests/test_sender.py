@@ -20,10 +20,11 @@ class FakeClock:
 
 
 class StubSocket:
-    def __init__(self, clock, send_cost=0.0, error=None):
+    def __init__(self, clock, send_cost=0.0, error=None, ack=b"\x00"):
         self.clock = clock
         self.send_cost = send_cost
         self.error = error
+        self.ack = ack
         self.sent = []
 
     def sendall(self, data):
@@ -31,6 +32,9 @@ class StubSocket:
             raise self.error
         self.sent.append((self.clock.now, data))
         self.clock.now += self.send_cost
+
+    def recv(self, size):
+        return self.ack
 
 
 def numbered_frames(count, duration):
@@ -47,22 +51,21 @@ def test_fast_device_gets_every_frame_on_schedule():
 
     stats = play(sock, numbered_frames(5, 0.1), clock)
 
-    assert (stats.sent, stats.dropped) == (5, 0)
+    assert stats.sent == 5
     assert [t for t, _ in sock.sent] == pytest.approx([0.0, 0.1, 0.2, 0.3, 0.4])
     assert [data for _, data in sock.sent] == [protocol.frame_message(f) for f, _ in numbered_frames(5, 0.1)]
 
 
-def test_slow_device_drops_frames_but_keeps_wall_clock_and_last_frame():
+def test_slow_device_sends_every_frame_but_falls_behind_schedule():
     clock = FakeClock()
     sock = StubSocket(clock, send_cost=0.25)
     frames = numbered_frames(10, 0.1)
 
     stats = play(sock, frames, clock)
 
-    assert stats.dropped > 0
-    assert stats.sent + stats.dropped == 10
-    assert sock.sent[-1][1] == protocol.frame_message(frames[-1][0])
-    assert clock.now <= 1.0 + 0.1 + 0.25
+    assert stats.sent == 10
+    assert [data for _, data in sock.sent] == [protocol.frame_message(f) for f, _ in frames]
+    assert clock.now >= 10 * 0.25
 
 
 def test_single_still_frame_is_sent_once():
@@ -71,12 +74,42 @@ def test_single_still_frame_is_sent_once():
 
     stats = play(sock, numbered_frames(1, 0), clock)
 
-    assert (stats.sent, stats.dropped) == (1, 0)
+    assert stats.sent == 1
 
 
 def test_send_failure_becomes_connection_lost():
     clock = FakeClock()
     sock = StubSocket(clock, error=ConnectionResetError())
+
+    with pytest.raises(sender.SenderError, match="connection lost"):
+        play(sock, numbered_frames(3, 0.1), clock)
+
+
+def test_window_allows_several_sends_before_first_ack_wait():
+    clock = FakeClock()
+    events = []
+
+    class OrderedSocket(StubSocket):
+        def sendall(self, data):
+            events.append("send")
+            super().sendall(data)
+
+        def recv(self, size):
+            events.append("recv")
+            return super().recv(size)
+
+    sock = OrderedSocket(clock)
+    frames = numbered_frames(sender.ACK_WINDOW + 2, 0.0)
+
+    play(sock, frames, clock)
+
+    assert events[:sender.ACK_WINDOW] == ["send"] * sender.ACK_WINDOW
+    assert events[sender.ACK_WINDOW] == "recv"
+
+
+def test_missing_ack_becomes_connection_lost():
+    clock = FakeClock()
+    sock = StubSocket(clock, ack=b"")
 
     with pytest.raises(sender.SenderError, match="connection lost"):
         play(sock, numbered_frames(3, 0.1), clock)

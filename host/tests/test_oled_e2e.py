@@ -47,6 +47,7 @@ class FakeDevice:
                 if header is None:
                     break
                 self.messages.append((header[0], self._recv_exact(conn, protocol.FRAME_SIZE)))
+                conn.sendall(b"\x00")
             time.sleep(self.close_delay)
         while True:
             try:
@@ -106,7 +107,7 @@ def test_png_holds_connection_until_device_closes(tmp_path, capsys):
 
     assert code == 0
     assert time.monotonic() - started >= 0.5
-    assert "sent 1, dropped 0" in capsys.readouterr().out
+    assert "sent 1" in capsys.readouterr().out
 
 
 def test_loop_interrupted_still_prints_stats(tmp_path, capsys, monkeypatch):
@@ -125,7 +126,7 @@ def test_loop_interrupted_still_prints_stats(tmp_path, capsys, monkeypatch):
 
     code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port), "--loop"])
 
-    match = re.search(r"sent (\d+), dropped (\d+)", capsys.readouterr().out)
+    match = re.search(r"sent (\d+)", capsys.readouterr().out)
     assert code == 0
     assert match and int(match.group(1)) >= 1
 

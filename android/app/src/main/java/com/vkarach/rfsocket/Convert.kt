@@ -101,20 +101,22 @@ fun scale(bitmap: Bitmap, mode: ScaleMode): IntArray {
     val scaledW = (srcW * scaleFactor).roundToInt().coerceAtLeast(1)
     val scaledH = (srcH * scaleFactor).roundToInt().coerceAtLeast(1)
     val scaled = Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+    // One bulk getPixels call instead of a per-pixel getPixel loop, which was too slow for video.
+    val pixels = IntArray(scaledW * scaledH)
+    scaled.getPixels(pixels, 0, scaledW, 0, 0, scaledW, scaledH)
+    if (scaled !== bitmap) scaled.recycle()
+
     val offsetX = (FRAME_WIDTH - scaledW) / 2
     val offsetY = (FRAME_HEIGHT - scaledH) / 2
     for (y in 0 until FRAME_HEIGHT) {
         val sy = y - offsetY
+        if (sy !in 0 until scaledH) continue
+        val srcRow = sy * scaledW
         for (x in 0 until FRAME_WIDTH) {
             val sx = x - offsetX
-            gray[y * FRAME_WIDTH + x] = if (sx in 0 until scaledW && sy in 0 until scaledH) {
-                luma(scaled.getPixel(sx, sy))
-            } else {
-                0
-            }
+            if (sx in 0 until scaledW) gray[y * FRAME_WIDTH + x] = luma(pixels[srcRow + sx])
         }
     }
-    if (scaled !== bitmap) scaled.recycle()
     return gray
 }
 

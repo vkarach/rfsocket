@@ -42,7 +42,7 @@ async def _reply(writer, status):
     await writer.drain()
 
 
-async def _serve_frames(reader):
+async def _serve_frames(reader, writer):
     global _current
     task = asyncio.current_task()
     _current = task
@@ -52,6 +52,8 @@ async def _serve_frames(reader):
             if not await _read_exact(reader, _frame_view):
                 break
             display.show_frame(_frame)
+            writer.write(b"\x00")
+            await writer.drain()
             if not await _read_exact(reader, _header_view) or _header[0] != MSG_FRAME:
                 break
     finally:
@@ -105,7 +107,7 @@ async def _serve_client(reader, writer):
         if not await _read_exact(reader, _header_view):
             return
         if _header[0] == MSG_FRAME:
-            await _serve_frames(reader)
+            await _serve_frames(reader, writer)
         elif _header[0] == MSG_STORE:
             await _serve_store(reader, writer)
     except Exception as exc:

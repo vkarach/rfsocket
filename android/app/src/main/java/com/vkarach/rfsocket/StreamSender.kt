@@ -20,20 +20,17 @@ fun frameMessage(frame: ByteArray): ByteArray {
     return byteArrayOf(MSG_FRAME.toByte()) + frame
 }
 
-/** Ports host/sender.py's play(): sends on schedule, drops a frame instead of queuing when behind. */
+/** Sleeps until a frame's due time, never drops - backpressure against a slow device is the caller's job. */
 class FrameTimer(private val clock: () -> Long = System::currentTimeMillis) {
     private var due: Long? = null
 
-    fun next(durationMs: Int, send: () -> Unit): Boolean {
+    fun next(durationMs: Int, send: () -> Unit) {
         val now = clock()
         val target = due ?: now
-        val late = now > target + durationMs
-        due = target + durationMs
-        if (late) return false
         val wait = target - now
         if (wait > 0) Thread.sleep(wait)
         send()
-        return true
+        due = target + durationMs
     }
 }
 

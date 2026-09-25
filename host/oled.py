@@ -114,7 +114,7 @@ def main(argv):
         return 1
     except KeyboardInterrupt:
         return 0
-    print("sent %d, dropped %d" % (stats.sent, stats.dropped))
+    print("sent %d" % stats.sent)
     return save_to_history(args, recorder)
 
 

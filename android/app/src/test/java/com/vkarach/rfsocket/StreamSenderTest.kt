@@ -3,25 +3,23 @@ package com.vkarach.rfsocket
 import java.net.ServerSocket
 import java.net.Socket
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FrameTimerTest {
 
     @Test
-    fun sendsFramesOnTimeAndDropsWhenBehind() {
+    fun sendsEveryFrameEvenWhenBehindSchedule() {
         var now = 0L
         val timer = FrameTimer { now }
         val sent = mutableListOf<Int>()
 
-        assertTrue(timer.next(100) { sent += 0 })   // first frame always sent
-        now = 250                                    // 150ms late for a 100ms-duration frame
-        assertFalse(timer.next(100) { sent += 1 })    // dropped: falling behind
+        timer.next(100) { sent += 0 }
+        now = 250
+        timer.next(100) { sent += 1 }
         now = 260
-        assertTrue(timer.next(100) { sent += 2 })     // caught up enough to send
+        timer.next(100) { sent += 2 }
 
-        assertEquals(listOf(0, 2), sent)
+        assertEquals(listOf(0, 1, 2), sent)
     }
 }
 

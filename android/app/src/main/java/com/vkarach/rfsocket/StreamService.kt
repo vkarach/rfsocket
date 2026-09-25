@@ -36,6 +36,8 @@ private const val NOTIFICATION_ID = 1
 private const val ACTION_STOP = "com.vkarach.rfsocket.STOP_STREAM"
 // Matches host/oled.py's Recorder cap: anything larger can never be stored.
 private const val HISTORY_MAX_BYTES = 1024 * 1024
+// Enough in-flight frames to hide the network round trip behind the device's own draw time.
+private const val ACK_WINDOW = 4
 
 object StreamController {
     private val _outcome = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -133,10 +135,33 @@ class StreamService : Service() {
 
         try {
             Socket(host, port).use { socket ->
+                socket.tcpNoDelay = true
                 val out = socket.getOutputStream()
+                val input = socket.getInputStream()
                 var settingsAtPassStart = StreamController.settings
                 var firstPassDone = false
                 var looping = true
+                var inFlight = 0
+
+                fun readAck() {
+                    if (input.read() < 0) throw IOException("connection lost: device closed the connection")
+                }
+
+                fun sendFrame(frame: ByteArray) {
+                    if (inFlight >= ACK_WINDOW) {
+                        readAck()
+                        inFlight--
+                    }
+                    out.write(frameMessage(frame))
+                    inFlight++
+                }
+
+                fun drainAcks() {
+                    while (inFlight > 0) {
+                        readAck()
+                        inFlight--
+                    }
+                }
 
                 while (looping && !StreamController.stopRequested) {
                     for ((bitmap, durationMs) in source.frames()) {
@@ -154,9 +179,9 @@ class StreamService : Service() {
                             settingsAtPassStart.dither
                         }
                         val frame = toFrame(bitmap, settingsAtPassStart.scaleMode, effectiveDither, settingsAtPassStart.invert)
-                        bitmap.recycle()
+                        if (source !is ImageSource) bitmap.recycle()
 
-                        timer.next(durationMs) { out.write(frameMessage(frame)) }
+                        timer.next(durationMs) { sendFrame(frame) }
                         StreamController.setActive(StreamState(name, settingsAtPassStart, frame))
 
                         if (!firstPassDone && !recordingTooLarge) {
@@ -166,18 +191,39 @@ class StreamService : Service() {
                     }
                     if (!firstPassDone) {
                         firstPassDone = true
-                        recordingComplete = !recordingTooLarge
+                        // A user Stop mid-pass leaves a truncated recording - never upload that as history.
+                        recordingComplete = !recordingTooLarge && !StreamController.stopRequested
                     }
                     looping = settingsAtPassStart.loop && source !is ImageSource && !StreamController.stopRequested
                 }
+                drainAcks()
                 if (source is ImageSource) {
-                    while (!StreamController.stopRequested) Thread.sleep(200)
+                    while (!StreamController.stopRequested) {
+                        if (StreamController.settingsChanged) {
+                            StreamController.settingsChanged = false
+                            settingsAtPassStart = StreamController.settings
+                            val effectiveDither = if (settingsAtPassStart.dither == DitherMethod.Auto) {
+                                autoDither
+                            } else {
+                                settingsAtPassStart.dither
+                            }
+                            val frame = toFrame(source.bitmap, settingsAtPassStart.scaleMode, effectiveDither, settingsAtPassStart.invert)
+                            out.write(frameMessage(frame))
+                            if (input.read() < 0) throw IOException("connection lost: device closed the connection")
+                            StreamController.setActive(StreamState(name, settingsAtPassStart, frame))
+                        }
+                        Thread.sleep(200)
+                    }
+                    source.bitmap.recycle()
                 }
             }
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            StreamController.setActive(null)
             StreamController.reportOutcome("error: ${e.message}")
             return
         }
+        // Upload can take seconds (flash writes) and must not keep the UI in "streaming" state.
+        StreamController.setActive(null)
 
         if (!recordingComplete) {
             StreamController.reportOutcome("not saved: first pass incomplete")
@@ -193,6 +239,7 @@ class StreamService : Service() {
     private fun uploadToHistory(clip: RecordedClip, host: String, port: Int) {
         try {
             Socket(host, port).use { socket ->
+                socket.tcpNoDelay = true
                 when (StoreProtocol.upload(socket, clip, StreamController.settings.star)) {
                     STORE_DONE -> StreamController.reportOutcome("saved ${clip.id}")
                     STORE_EXISTS -> StreamController.reportOutcome("already saved ${clip.id}")

@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from protocol import MSG_STORE, STORE_ACCEPT, frame_message
 
-_END = object()
 UPLOAD_CHUNK = 4096
 
 
@@ -16,7 +15,6 @@ class SenderError(Exception):
 @dataclass
 class PlayStats:
     sent: int = 0
-    dropped: int = 0
 
 
 def connect(host, port, timeout=5.0):
@@ -67,26 +65,44 @@ def store(host, port, clip, keep, timeout=10.0):
         sock.close()
 
 
+ACK_WINDOW = 4
+
+
 def play(sock, frames, clock=time.monotonic, sleep=time.sleep, stats=None):
+    # Windowed ack: hides the round trip behind the device's own draw time, bounded backlog.
     stats = stats if stats is not None else PlayStats()
-    frames = iter(frames)
-    current = next(frames, _END)
-    start = clock()
-    due = start
-    while current is not _END:
-        frame, duration = current
-        upcoming = next(frames, _END)
-        now = clock()
-        if upcoming is not _END and now > due + duration:
-            stats.dropped += 1
-        else:
+    due = clock()
+    in_flight = 0
+    try:
+        for frame, duration in frames:
+            now = clock()
             if due > now:
                 sleep(due - now)
-            try:
-                sock.sendall(frame_message(frame))
-            except OSError as exc:
-                raise SenderError("connection lost: %s" % exc)
+            if in_flight >= ACK_WINDOW:
+                if not sock.recv(1):
+                    raise SenderError("connection lost: device closed the connection")
+                in_flight -= 1
+            sock.sendall(frame_message(frame))
+            in_flight += 1
             stats.sent += 1
-        due += duration
-        current = upcoming
+            due += duration
+        while in_flight > 0:
+            if not sock.recv(1):
+                raise SenderError("connection lost: device closed the connection")
+            in_flight -= 1
+    except OSError as exc:
+        raise SenderError("connection lost: %s" % exc)
+    except BaseException:
+        _drain_quietly(sock, in_flight)
+        raise
     return stats
+
+
+def _drain_quietly(sock, in_flight):
+    while in_flight > 0:
+        try:
+            if not sock.recv(1):
+                return
+        except OSError:
+            return
+        in_flight -= 1

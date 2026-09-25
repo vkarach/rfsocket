@@ -3,7 +3,10 @@ package com.vkarach.rfsocket
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
@@ -21,7 +24,7 @@ sealed interface MediaSource {
     fun frames(): Sequence<Pair<Bitmap, Int>>
 }
 
-class ImageSource(private val bitmap: Bitmap) : MediaSource {
+class ImageSource(val bitmap: Bitmap) : MediaSource {
     override fun frames(): Sequence<Pair<Bitmap, Int>> = sequenceOf(bitmap to 0)
 }
 
@@ -66,6 +69,8 @@ class VideoSource(private val context: Context, private val uri: Uri) : MediaSou
             DEFAULT_FRAME_DURATION_MS
         }
         val mime = format.getString(MediaFormat.KEY_MIME)!!
+        // Android CDD requires this format for a surface-less decode; forces a readable image.
+        format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
         val codec = MediaCodec.createDecoderByType(mime)
         codec.configure(format, null, null, 0)
         codec.start()
@@ -109,20 +114,23 @@ class VideoSource(private val context: Context, private val uri: Uri) : MediaSou
 
     private fun yPlaneToBitmap(image: android.media.Image): Bitmap {
         val plane = image.planes[0]
-        val bitmap = Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ALPHA_8)
+        // ARGB_8888, not ALPHA_8: getPixel()/scale() need a config that supports pixel readback.
+        val bitmap = Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888)
         val rowStride = plane.rowStride
         val buffer = plane.buffer
         val row = ByteArray(image.width)
+        // One bulk setPixels call instead of one per row (JNI overhead dominates on 720p+ video).
+        val pixels = IntArray(image.width * image.height)
         for (y in 0 until image.height) {
             buffer.position(y * rowStride)
             buffer.get(row, 0, image.width)
-            bitmap.setPixels(
-                IntArray(image.width) { x ->
-                    (row[x].toInt() and 0xFF).let { 0xFF shl 24 or (it shl 16) or (it shl 8) or it }
-                },
-                0, image.width, 0, y, image.width, 1,
-            )
+            val rowOffset = y * image.width
+            for (x in 0 until image.width) {
+                val v = row[x].toInt() and 0xFF
+                pixels[rowOffset + x] = 0xFF shl 24 or (v shl 16) or (v shl 8) or v
+            }
         }
+        bitmap.setPixels(pixels, 0, image.width, 0, 0, image.width, image.height)
         return bitmap
     }
 }
@@ -134,11 +142,25 @@ fun openMediaSource(context: Context, uri: Uri, mimeType: String?): MediaSource 
                 ?: throw IllegalArgumentException("cannot read $uri"),
         )
         mimeType?.startsWith("video/") == true -> VideoSource(context, uri)
-        mimeType?.startsWith("image/") == true -> {
-            val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
-                ?: throw IllegalArgumentException("cannot decode $uri")
-            ImageSource(bitmap)
-        }
+        mimeType?.startsWith("image/") == true -> ImageSource(decodeOrientedBitmap(context, uri))
         else -> throw IllegalArgumentException("unsupported media type: $mimeType")
     }
+}
+
+private fun decodeOrientedBitmap(context: Context, uri: Uri): Bitmap {
+    val bitmap = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+        ?: throw IllegalArgumentException("cannot decode $uri")
+    val rotation = context.contentResolver.openInputStream(uri)?.use { stream ->
+        when (ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270
+            else -> 0
+        }
+    } ?: 0
+    if (rotation == 0) return bitmap
+    val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    bitmap.recycle()
+    return rotated
 }
