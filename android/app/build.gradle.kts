@@ -40,6 +40,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.jzlib)
+    implementation(libs.gifdecoder)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }
