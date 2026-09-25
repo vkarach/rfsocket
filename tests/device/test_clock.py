@@ -47,6 +47,12 @@ def test_local_hm_applies_offset_and_dst():
     assert clock.local_hm(utc(2026, 7, 15, 23, 30), CET, True) == (1, 30)
 
 
+def test_local_date_applies_offset_and_dst():
+    assert clock.local_date(utc(2026, 9, 25, 12), CET, True) == ("Fri", 25, 9)
+    assert clock.local_date(utc(2026, 9, 25, 23, 30), CET, True) == ("Sat", 26, 9)
+    assert clock.local_date(utc(2026, 1, 15, 12), CET, False) == ("Thu", 15, 1)
+
+
 def ntp_reply(unix):
     return bytes(40) + struct.pack("!I", unix + clock.NTP_UNIX_DELTA) + bytes(4)
 

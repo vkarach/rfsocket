@@ -10,11 +10,13 @@ import dy08
 import idle
 import player
 import rf
+import settings
 import stream
 
 HTTP_PORT = 80
 # Not a valid module name: a directory in / named like a module shadows lib/ on import.
 CLIPS_ROOT = "/clip-store"
+SETTINGS_PATH = "/settings.json"
 SCREEN_TICK_S = 1
 NTP_INTERVAL_S = 6 * 3600
 NTP_RETRY_S = 60
@@ -28,10 +30,10 @@ RESPONSE_TEMPLATE = (
 )
 
 states = {name: 0 for name in config.CHANNELS}
+brightness = settings.get_brightness(SETTINGS_PATH)
 ip = ""
 wall_clock = clock.Clock(time.ticks_diff)
-idle_timer = idle.IdleTimer(config.CLOCK_AFTER_S * 1000, config.SLEEP_AFTER_S * 1000,
-                            time.ticks_ms(), time.ticks_diff)
+idle_timer = idle.IdleTimer(config.SLEEP_AFTER_S * 1000, time.ticks_ms(), time.ticks_diff)
 clip_store = clips.ClipStore(CLIPS_ROOT, config.CLIP_BUDGET, config.CLIP_MAX_COUNT, config.CLIP_AUTO_MAX)
 player.init(clip_store)
 
@@ -65,6 +67,9 @@ async def handle(path):
     if parts == ["screen"]:
         return idle_timer.pinned or "auto"
 
+    if parts == ["brightness"]:
+        return str(brightness)
+
     if parts == ["clips"]:
         return list_clips()
 
@@ -85,6 +90,8 @@ async def handle_action(parts, flags):
     name, command = parts[0].lower(), parts[1].lower()
     if name == "screen":
         return pin_screen(command)
+    if name == "brightness":
+        return set_brightness(command)
     if name not in config.CHANNELS:
         return None
 
@@ -148,6 +155,20 @@ def pin_screen(command):
     return body
 
 
+def set_brightness(command):
+    global brightness
+    try:
+        value = int(command)
+    except ValueError:
+        return None
+    if not 0 <= value <= 255:
+        return None
+    brightness = value
+    settings.set_brightness(SETTINGS_PATH, value)
+    display.set_brightness(value)
+    return "brightness: %d" % value
+
+
 def wake():
     now = time.ticks_ms()
     idle_timer.touch(now)
@@ -160,7 +181,12 @@ async def screen_loop():
         if display.streaming():
             idle_timer.touch(now)
         unix = wall_clock.unix(now)
-        display.set_time(None if unix is None else clock.local_hm(unix, config.TZ_OFFSET_S, config.TZ_EU_DST))
+        if unix is None:
+            display.set_time(None)
+        else:
+            hour, minute = clock.local_hm(unix, config.TZ_OFFSET_S, config.TZ_EU_DST)
+            weekday, day, _ = clock.local_date(unix, config.TZ_OFFSET_S, config.TZ_EU_DST)
+            display.set_time((hour, minute, weekday, day))
         display.set_screen(idle_timer.screen(now))
         await asyncio.sleep(SCREEN_TICK_S)
 
@@ -201,6 +227,7 @@ async def main():
     global ip
     ip = connect_wifi()
     print("ip:", ip)
+    display.set_brightness(brightness)
     display.show(ip, states)
     await asyncio.start_server(serve_client, "0.0.0.0", HTTP_PORT)
     await stream.serve(config.STREAM_PORT, clip_store)

@@ -43,11 +43,24 @@ def eu_dst(unix):
     return start <= unix < end
 
 
-def local_hm(unix, offset_s, dst):
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def _local_unix(unix, offset_s, dst):
     if dst and eu_dst(unix):
         offset_s += DST_SHIFT_S
-    seconds = (unix + offset_s) % SECONDS_PER_DAY
+    return unix + offset_s
+
+
+def local_hm(unix, offset_s, dst):
+    seconds = _local_unix(unix, offset_s, dst) % SECONDS_PER_DAY
     return seconds // 3600, seconds % 3600 // 60
+
+
+def local_date(unix, offset_s, dst):
+    days = _local_unix(unix, offset_s, dst) // SECONDS_PER_DAY
+    _, month, day = civil_from_days(days)
+    return WEEKDAYS[(days + 3) % 7], day, month
 
 
 def unix_from_ntp(packet):

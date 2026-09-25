@@ -15,6 +15,8 @@ HEIGHT = 64
 FRAME_SIZE = WIDTH * HEIGHT // 8
 # Must match SHIFT_MARGIN in host/gen_bigfont.py: the big clock moves +-2 px per minute.
 CLOCK_SHIFT = 2
+# Reserved row at the bottom of the clock screen for the date line.
+DATE_BAND = 10
 
 _oled = SSD1306_I2C(WIDTH, HEIGHT, I2C(I2C_ID, scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=I2C_FREQ))
 _glyph_buffers = {ch: framebuf.FrameBuffer(bytearray(glyph[3]), glyph[0], bigfont.HEIGHT, framebuf.MONO_HLSB)
@@ -79,6 +81,10 @@ def show_frame(frame):
     _oled.show()
 
 
+def set_brightness(value):
+    _oled.contrast(value)
+
+
 def _power(on):
     global _powered
     if on != _powered:
@@ -105,7 +111,7 @@ def _redraw():
 def _draw_status(ip, states):
     _oled.fill(0)
     _oled.text("rfsocket", 0, 0)
-    clock_text = "%02d:%02d" % _time if _time is not None else "--:--"
+    clock_text = "%02d:%02d" % _time[:2] if _time is not None else "--:--"
     _oled.text(clock_text, WIDTH - 8 * len(clock_text), 0)
 
     row = 18
@@ -117,13 +123,18 @@ def _draw_status(ip, states):
     _oled.show()
 
 
-def _draw_clock(hour, minute):
+def _draw_clock(hour, minute, weekday, day):
     text = "%02d:%02d" % (hour, minute)
-    x, y = layout.text_origin(text, bigfont.GLYPHS, bigfont.GAP, WIDTH, HEIGHT, bigfont.HEIGHT,
+    x, y = layout.text_origin(text, bigfont.GLYPHS, bigfont.GAP, WIDTH, HEIGHT - DATE_BAND, bigfont.HEIGHT,
                               minute, CLOCK_SHIFT)
 
     _oled.fill(0)
     for ch in text:
         _oled.blit(_glyph_buffers[ch], x, y)
         x += bigfont.GLYPHS[ch][0] + bigfont.GAP
+
+    date_text = "%s %d" % (weekday, day)
+    span = 2 * CLOCK_SHIFT + 1
+    date_x = (WIDTH - 8 * len(date_text)) // 2 + minute % span - CLOCK_SHIFT
+    _oled.text(date_text, date_x, HEIGHT - 8)
     _oled.show()

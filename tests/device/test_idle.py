@@ -4,13 +4,11 @@ import idle
 
 
 def timer(now=0):
-    return idle.IdleTimer(clock_after_ms=60_000, sleep_after_ms=300_000, now_ms=now)
+    return idle.IdleTimer(sleep_after_ms=300_000, now_ms=now)
 
 
 @pytest.mark.parametrize("elapsed, screen", [
-    (0, idle.STATUS),
-    (59_999, idle.STATUS),
-    (60_000, idle.CLOCK),
+    (0, idle.CLOCK),
     (299_999, idle.CLOCK),
     (300_000, idle.OFF),
     (10_000_000, idle.OFF),
@@ -23,7 +21,7 @@ def test_touch_restarts_countdown():
     t = timer()
     t.touch(250_000)
 
-    assert t.screen(300_000) == idle.STATUS
+    assert t.screen(300_000) == idle.CLOCK
     assert t.screen(550_000) == idle.OFF
 
 
@@ -50,7 +48,7 @@ def test_unpin_resumes_timers_from_last_touch():
     t.touch(1_000_000)
     t.pin(None)
 
-    assert t.screen(1_000_000) == idle.STATUS
+    assert t.screen(1_000_000) == idle.CLOCK
     assert t.screen(1_300_000) == idle.OFF
 
 
@@ -71,6 +69,6 @@ def test_pin_rejects_unknown_screen():
 
 
 def test_injected_diff_handles_tick_wrap():
-    t = idle.IdleTimer(60_000, 300_000, now_ms=990_000, diff=lambda a, b: (a - b) % 1_000_000)
+    t = idle.IdleTimer(300_000, now_ms=990_000, diff=lambda a, b: (a - b) % 1_000_000)
 
     assert t.screen(60_000) == idle.CLOCK

@@ -5,8 +5,7 @@ SCREENS = (STATUS, CLOCK, OFF)
 
 
 class IdleTimer:
-    def __init__(self, clock_after_ms, sleep_after_ms, now_ms, diff=lambda a, b: a - b):
-        self._clock_after = clock_after_ms
+    def __init__(self, sleep_after_ms, now_ms, diff=lambda a, b: a - b):
         self._sleep_after = sleep_after_ms
         self._diff = diff
         self._last = now_ms
@@ -30,6 +29,4 @@ class IdleTimer:
         elapsed = self._diff(now_ms, self._last)
         if elapsed >= self._sleep_after:
             return OFF
-        if elapsed >= self._clock_after:
-            return CLOCK
-        return STATUS
+        return CLOCK
