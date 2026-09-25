@@ -91,8 +91,9 @@ async def handle(path):
 
 def list_clips():
     # Name goes last because it may contain spaces.
-    return "\n".join("%s %d %d %s %s" % (entry["id"], entry["frames"], (entry["size"] + 1023) // 1024,
-                                         "*" if entry["star"] else "-", entry["name"])
+    return "\n".join("%s %d %d %s %s %s" % (entry["id"], entry["frames"], (entry["size"] + 1023) // 1024,
+                                            "*" if entry["star"] else "-",
+                                            ">" if entry["id"] == clip_store.playing else "-", entry["name"])
                      for entry in clip_store.list())
 
 
