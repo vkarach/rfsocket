@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             RfSocketTheme {
-                ToggleScreen(client = client, channel = CHANNEL)
+                AppScaffold(client = client, channel = CHANNEL)
             }
         }
     }

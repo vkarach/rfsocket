@@ -6,6 +6,8 @@ import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+class NotFoundException : IOException("not found")
+
 class SocketClient(private val baseUrl: String) {
 
     suspend fun toggle(channel: String): Boolean = request("/$channel/toggle") == "on"
@@ -16,15 +18,34 @@ class SocketClient(private val baseUrl: String) {
         return entry.substringAfter(":") == "on"
     }
 
+    suspend fun clips(): List<Clip> = parseClips(request("/clips"))
+
+    suspend fun play(id: String, once: Boolean) {
+        request("/clips/$id/play" + if (once) "?once" else "")
+    }
+
+    suspend fun stop() {
+        request("/clips/stop")
+    }
+
+    suspend fun star(id: String, starred: Boolean) {
+        request("/clips/$id/" + if (starred) "star" else "unstar")
+    }
+
+    suspend fun delete(id: String) {
+        request("/clips/$id/delete")
+    }
+
     private suspend fun request(path: String): String = withContext(Dispatchers.IO) {
         val connection = URL(baseUrl + path).openConnection() as HttpURLConnection
         connection.connectTimeout = 3000
         connection.readTimeout = 5000
         try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                throw IOException("HTTP ${connection.responseCode}")
+            when (connection.responseCode) {
+                HttpURLConnection.HTTP_OK -> connection.inputStream.bufferedReader().use { it.readText().trim() }
+                HttpURLConnection.HTTP_NOT_FOUND -> throw NotFoundException()
+                else -> throw IOException("HTTP ${connection.responseCode}")
             }
-            connection.inputStream.bufferedReader().use { it.readText().trim() }
         } finally {
             connection.disconnect()
         }
