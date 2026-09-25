@@ -15,6 +15,10 @@ class IdleTimer:
     def touch(self, now_ms):
         self._last = now_ms
 
+    @property
+    def pinned(self):
+        return self._pinned
+
     def pin(self, screen):
         if screen is not None and screen not in SCREENS:
             raise ValueError("unknown screen: %s" % screen)

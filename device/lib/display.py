@@ -59,6 +59,14 @@ def begin_stream(task):
     _power(True)
 
 
+def interrupt():
+    global _owner
+    if _owner is not None:
+        _owner.cancel()
+        _owner = None
+        _redraw()
+
+
 def end_stream(task):
     global _owner
     if _owner is task:

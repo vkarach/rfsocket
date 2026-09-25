@@ -54,6 +54,17 @@ def test_unpin_resumes_timers_from_last_touch():
     assert t.screen(1_300_000) == idle.OFF
 
 
+def test_pinned_reports_pin():
+    t = timer()
+    assert t.pinned is None
+
+    t.pin(idle.OFF)
+    assert t.pinned == idle.OFF
+
+    t.pin(None)
+    assert t.pinned is None
+
+
 def test_pin_rejects_unknown_screen():
     with pytest.raises(ValueError):
         timer().pin("disco")

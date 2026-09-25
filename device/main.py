@@ -62,8 +62,22 @@ async def handle(path):
         return " ".join("%s:%s" % (name, "on" if states[name] else "off")
                         for name in sorted(states))
 
+    if parts == ["screen"]:
+        return idle_timer.pinned or "auto"
+
+    if parts == ["clips"]:
+        return list_clips()
+
+    # Only actions wake the screen: clients poll the reads above.
+    body = await handle_action(parts, query.split("&"))
+    if body is not None:
+        wake()
+    return body
+
+
+async def handle_action(parts, flags):
     if parts and parts[0] == "clips":
-        return await handle_clips(parts[1:], query.split("&"))
+        return await handle_clips(parts[1:], flags)
 
     if len(parts) != 2:
         return None
@@ -98,8 +112,6 @@ def list_clips():
 
 
 async def handle_clips(parts, flags):
-    if not parts:
-        return list_clips()
     if parts == ["stop"]:
         player.stop()
         return "stopped"
@@ -130,7 +142,9 @@ def pin_screen(command):
         body = "screen pinned: %s" % command
     else:
         return None
-    wake()
+    # Choosing a screen takes it back from playback or a live stream.
+    player.stop()
+    display.interrupt()
     return body
 
 
@@ -166,7 +180,6 @@ async def ntp_loop():
 
 
 async def serve_client(reader, writer):
-    wake()
     try:
         request = (await reader.read(256)).decode()
         path = request.split(" ")[1] if " " in request else ""
