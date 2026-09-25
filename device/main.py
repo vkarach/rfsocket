@@ -13,7 +13,8 @@ import rf
 import stream
 
 HTTP_PORT = 80
-CLIPS_ROOT = "/clips"
+# Not a valid module name: a directory in / named like a module shadows lib/ on import.
+CLIPS_ROOT = "/clip-store"
 SCREEN_TICK_S = 1
 NTP_INTERVAL_S = 6 * 3600
 NTP_RETRY_S = 60
