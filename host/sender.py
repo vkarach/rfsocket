@@ -1,10 +1,12 @@
 import socket
+import struct
 import time
 from dataclasses import dataclass
 
-from protocol import frame_message
+from protocol import MSG_STORE, STORE_ACCEPT, frame_message
 
 _END = object()
+UPLOAD_CHUNK = 4096
 
 
 class SenderError(Exception):
@@ -37,6 +39,32 @@ def hold(sock, poll=0.5):
             continue
         except OSError:
             return
+
+
+def _recv_status(sock):
+    status = sock.recv(1)
+    if not status:
+        raise SenderError("connection lost: device closed the connection")
+    return status[0]
+
+
+def store(host, port, clip, keep, timeout=10.0):
+    """Upload a clip over STORE and return the device's final status byte."""
+    sock = connect(host, port, timeout)
+    try:
+        name = clip.name.encode("ascii")
+        sock.sendall(struct.pack(">B12sBB", MSG_STORE, clip.id.encode("ascii"), int(keep), len(name)) + name
+                     + struct.pack(">II", clip.frames, len(clip.data)))
+        status = _recv_status(sock)
+        if status != STORE_ACCEPT:
+            return status
+        for offset in range(0, len(clip.data), UPLOAD_CHUNK):
+            sock.sendall(clip.data[offset:offset + UPLOAD_CHUNK])
+        return _recv_status(sock)
+    except OSError as exc:
+        raise SenderError("connection lost: %s" % exc)
+    finally:
+        sock.close()
 
 
 def play(sock, frames, clock=time.monotonic, sleep=time.sleep, stats=None):

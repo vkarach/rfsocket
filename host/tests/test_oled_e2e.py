@@ -1,11 +1,13 @@
 import re
 import socket
+import struct
 import threading
 import time
 
 import pytest
 from PIL import Image
 
+import clip
 import convert
 import oled
 import protocol
@@ -14,14 +16,19 @@ from test_sources import make_gif
 
 
 class FakeDevice:
-    def __init__(self, close_after=None, close_delay=0.0):
+    """First connection is the frame stream; later connections speak STORE."""
+
+    def __init__(self, close_after=None, close_delay=0.0, store_reply=protocol.STORE_ACCEPT,
+                 cut_payload=False):
         self.close_after = close_after
         self.close_delay = close_delay
+        self.store_reply = store_reply
+        self.cut_payload = cut_payload
         self.messages = []
+        self.stores = []
         self.server = socket.create_server(("127.0.0.1", 0))
         self.port = self.server.getsockname()[1]
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
+        threading.Thread(target=self._run, daemon=True).start()
 
     def _recv_exact(self, conn, size):
         data = b""
@@ -41,10 +48,30 @@ class FakeDevice:
                     break
                 self.messages.append((header[0], self._recv_exact(conn, protocol.FRAME_SIZE)))
             time.sleep(self.close_delay)
-        self.server.close()
+        while True:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            with conn:
+                self._serve_store(conn)
+
+    def _serve_store(self, conn):
+        kind, clip_id, keep, name_length = struct.unpack(">B12sBB", self._recv_exact(conn, 15))
+        assert kind == protocol.MSG_STORE
+        name = self._recv_exact(conn, name_length).decode()
+        frames, size = struct.unpack(">II", self._recv_exact(conn, 8))
+        conn.sendall(bytes([self.store_reply]))
+        if self.store_reply != protocol.STORE_ACCEPT:
+            return
+        if self.cut_payload:
+            self._recv_exact(conn, 1)
+            return
+        payload = self._recv_exact(conn, size)
+        self.stores.append((clip_id.decode(), bool(keep), name, frames, payload))
+        conn.sendall(bytes([protocol.STORE_DONE]))
 
     def wait(self):
-        self.thread.join(5)
         return self.messages
 
 
@@ -138,6 +165,100 @@ def test_unreachable_device_exits_with_error(tmp_path, capsys):
 
     assert code == 1
     assert "cannot connect" in capsys.readouterr().err
+
+
+REAL_TO_FRAME = convert.to_frame
+
+
+def expected_clip(path, dither, durations):
+    builder = clip.ClipBuilder(str(path))
+    images = [image for image, _ in sources.open_source(str(path)).frames()]
+    for image, duration in zip(images, durations):
+        builder.add(REAL_TO_FRAME(image, "fit", dither, False), duration)
+    return builder.finish()
+
+
+def interrupt_after(monkeypatch, calls_allowed):
+    calls = []
+
+    def to_frame(*args):
+        calls.append(None)
+        if len(calls) > calls_allowed:
+            raise KeyboardInterrupt
+        return REAL_TO_FRAME(*args)
+
+    monkeypatch.setattr(oled.convert, "to_frame", to_frame)
+
+
+def test_png_is_uploaded_to_history_after_stream(tmp_path, capsys):
+    path = tmp_path / "pic.png"
+    Image.new("RGB", (80, 40), (255, 255, 255)).save(path)
+    device = FakeDevice(close_after=1)
+
+    code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port)])
+
+    built = expected_clip(path, "fs", [0])
+    assert code == 0
+    assert device.stores == [(built.id, False, "pic.png", 1, built.data)]
+    assert "saved %s" % built.id in capsys.readouterr().out
+
+
+def test_looped_gif_uploads_exactly_one_pass(tmp_path, monkeypatch):
+    path = make_gif(tmp_path / "anim.gif", [20, 20, 20])
+    device = FakeDevice()
+    interrupt_after(monkeypatch, 7)
+
+    code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port), "--loop"])
+
+    built = expected_clip(path, "bayer", [0.02, 0.02, 0.02])
+    assert code == 0
+    assert [(s[0], s[3]) for s in device.stores] == [(built.id, 3)]
+
+
+def test_incomplete_first_pass_is_not_uploaded(tmp_path, monkeypatch, capsys):
+    path = make_gif(tmp_path / "anim.gif", [20, 20, 20])
+    device = FakeDevice()
+    interrupt_after(monkeypatch, 2)
+
+    code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port)])
+
+    assert code == 0
+    assert device.stores == []
+    assert "not saved" in capsys.readouterr().out
+
+
+def test_keep_flag_is_sent(tmp_path):
+    path = make_gif(tmp_path / "anim.gif", [20, 20])
+    device = FakeDevice()
+
+    run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port), "--keep"])
+
+    assert [s[1] for s in device.stores] == [True]
+
+
+@pytest.mark.parametrize("reply, text", [
+    (protocol.STORE_EXISTS, "already saved"),
+    (protocol.STORE_TOO_LARGE, "too large for history"),
+    (protocol.STORE_NO_SPACE, "no space (starred clips fill the budget)"),
+])
+def test_store_replies_are_reported(tmp_path, capsys, reply, text):
+    path = make_gif(tmp_path / "anim.gif", [20, 20])
+    device = FakeDevice(store_reply=reply)
+
+    code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port)])
+
+    assert code == 0
+    assert text in capsys.readouterr().out
+
+
+def test_device_closing_mid_upload_is_an_error(tmp_path, capsys):
+    path = make_gif(tmp_path / "anim.gif", [20, 20])
+    device = FakeDevice(cut_payload=True)
+
+    code = run_main([str(path), "--host", "127.0.0.1", "--port", str(device.port)])
+
+    assert code == 1
+    assert "upload failed" in capsys.readouterr().err
 
 
 def test_missing_file_fails_before_connecting(tmp_path, capsys, monkeypatch):
