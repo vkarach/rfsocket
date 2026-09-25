@@ -15,12 +15,15 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 const val POLL_MS = 2000L
+private const val BRIGHTNESS_DEBOUNCE_MS = 80L
 
 interface DeviceApi {
     suspend fun states(): Map<String, Boolean>
     suspend fun set(channel: String, on: Boolean): Boolean
     suspend fun screen(): ScreenMode
     suspend fun pinScreen(mode: ScreenMode)
+    suspend fun brightness(): Int
+    suspend fun setBrightness(value: Int)
     suspend fun clips(): List<Clip>
     suspend fun play(id: String, once: Boolean)
     suspend fun stop()
@@ -33,6 +36,7 @@ data class DeviceState(
     val reachable: Boolean? = null,
     val channels: Map<String, Boolean>? = null,
     val screen: ScreenMode? = null,
+    val brightness: Int? = null,
     val clips: List<Clip>? = null,
 )
 
@@ -66,6 +70,22 @@ class DeviceModel(private val api: DeviceApi, private val pollMs: Long = POLL_MS
 
     fun pinScreen(mode: ScreenMode): Job = act { api.pinScreen(mode) }
 
+    // Debounced and applied optimistically: a full refresh per drag step visibly flickers the device.
+    private var brightnessJob: Job? = null
+
+    fun setBrightness(value: Int) {
+        _state.update { it.copy(brightness = value) }
+        brightnessJob?.cancel()
+        brightnessJob = viewModelScope.launch {
+            delay(BRIGHTNESS_DEBOUNCE_MS)
+            try {
+                api.setBrightness(value)
+            } catch (e: IOException) {
+                _state.update { it.copy(reachable = false) }
+            }
+        }
+    }
+
     fun play(id: String, once: Boolean): Job = act { api.play(id, once) }
 
     fun stop(): Job = act { api.stop() }
@@ -78,8 +98,11 @@ class DeviceModel(private val api: DeviceApi, private val pollMs: Long = POLL_MS
         try {
             val channels = api.states()
             val screen = api.screen()
+            val brightness = api.brightness()
             val clips = api.clips()
-            _state.value = DeviceState(reachable = true, channels = channels, screen = screen, clips = clips)
+            _state.value = DeviceState(
+                reachable = true, channels = channels, screen = screen, brightness = brightness, clips = clips,
+            )
         } catch (e: IOException) {
             _state.update { it.copy(reachable = false) }
         }

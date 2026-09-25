@@ -22,6 +22,7 @@ private class FakeApi : DeviceApi {
     var reachable = true
     var channels = mapOf("a" to false)
     var screen = ScreenMode.Auto
+    var brightness = 255
     var clips = listOf(Clip("0123456789ab", "cat.gif", 10, 3, starred = false, playing = false))
     var polls = 0
 
@@ -49,6 +50,16 @@ private class FakeApi : DeviceApi {
     override suspend fun pinScreen(mode: ScreenMode) {
         check()
         screen = mode
+    }
+
+    override suspend fun brightness(): Int {
+        check()
+        return brightness
+    }
+
+    override suspend fun setBrightness(value: Int) {
+        check()
+        brightness = value
     }
 
     override suspend fun clips(): List<Clip> {
@@ -163,6 +174,15 @@ class DeviceModelTest {
 
         assertEquals(mapOf("a" to true), model.state.value.channels)
         assertEquals(ScreenMode.Clock, model.state.value.screen)
+    }
+
+    @Test
+    fun brightnessActionRefreshes() = runTest(dispatcher) {
+        val model = model()
+        model.setBrightness(64)
+        advanceUntilIdle()
+
+        assertEquals(64, model.state.value.brightness)
     }
 
     @Test

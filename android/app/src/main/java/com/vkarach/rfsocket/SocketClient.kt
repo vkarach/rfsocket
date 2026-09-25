@@ -21,6 +21,12 @@ class SocketClient(private val baseUrl: String) : DeviceApi {
         request("/screen/${mode.path}")
     }
 
+    override suspend fun brightness(): Int = request("/brightness").toInt()
+
+    override suspend fun setBrightness(value: Int) {
+        request("/brightness/$value")
+    }
+
     override suspend fun clips(): List<Clip> = parseClips(request("/clips"))
 
     override suspend fun play(id: String, once: Boolean) {

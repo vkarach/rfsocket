@@ -34,8 +34,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,6 +57,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 private const val PREFS = "rfsocket"
@@ -133,6 +138,8 @@ fun SocketScreen(model: DeviceModel, state: DeviceState) {
             )
             Spacer(Modifier.height(44.dp))
             ScreenPicker(selected = state.screen, onPick = { model.pinScreen(it) })
+            Spacer(Modifier.height(32.dp))
+            BrightnessSlider(value = state.brightness, onChange = { model.setBrightness(it) })
         }
     }
 }
@@ -215,6 +222,59 @@ private fun ScreenPicker(selected: ScreenMode?, onPick: (ScreenMode) -> Unit) {
                 ) { Text(mode.label) }
             }
         }
+    }
+}
+
+// Contrast isn't perceptually linear near 0, so a gamma curve spreads the visible range across the track.
+private const val BRIGHTNESS_GAMMA = 2.2f
+private const val BRIGHTNESS_STEPS = 15
+
+private fun rawToPosition(raw: Int): Float = (raw / 255f).pow(1f / BRIGHTNESS_GAMMA) * 255f
+
+private fun positionToRaw(position: Float): Int =
+    ((position / 255f).pow(BRIGHTNESS_GAMMA) * 255f).roundToInt().coerceIn(0, 255)
+
+@Composable
+private fun BrightnessSlider(value: Int?, onChange: (Int) -> Unit) {
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    // Avoids the thumb snapping back to the stale polled value while a request is in flight.
+    var pending by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(value) {
+        if (value != null && value == pending) pending = null
+    }
+    val position = dragging ?: pending?.let(::rawToPosition) ?: value?.let(::rawToPosition) ?: 255f
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(horizontal = 32.dp).fillMaxWidth(),
+    ) {
+        Text(
+            text = "BRIGHTNESS",
+            color = Palette.Muted,
+            fontSize = 13.sp,
+            letterSpacing = 3.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Slider(
+            value = position,
+            onValueChange = {
+                dragging = it
+                val target = positionToRaw(it)
+                if (target != pending) {
+                    pending = target
+                    onChange(target)
+                }
+            },
+            onValueChangeFinished = { dragging = null },
+            valueRange = 0f..255f,
+            steps = BRIGHTNESS_STEPS,
+            modifier = Modifier.fillMaxWidth(),
+            colors = SliderDefaults.colors(
+                thumbColor = Palette.Amber,
+                activeTrackColor = Palette.Amber,
+                inactiveTrackColor = Palette.Outline,
+            ),
+        )
     }
 }
 
