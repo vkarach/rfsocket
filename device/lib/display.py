@@ -22,7 +22,7 @@ _glyph_buffers = {ch: framebuf.FrameBuffer(bytearray(glyph[3]), glyph[0], bigfon
 _status = None
 _time = None
 _screen = idle.STATUS
-_streaming = False
+_owner = None
 _powered = True
 
 
@@ -47,19 +47,23 @@ def set_screen(screen):
 
 
 def streaming():
-    return _streaming
+    return _owner is not None
 
 
-def begin_stream():
-    global _streaming
-    _streaming = True
+def begin_stream(task):
+    global _owner
+    # Cancel instead of closing the old socket: cancel() unhooks the task from the IO poller.
+    if _owner is not None and _owner is not task:
+        _owner.cancel()
+    _owner = task
     _power(True)
 
 
-def end_stream():
-    global _streaming
-    _streaming = False
-    _redraw()
+def end_stream(task):
+    global _owner
+    if _owner is task:
+        _owner = None
+        _redraw()
 
 
 def show_frame(frame):
@@ -78,7 +82,7 @@ def _power(on):
 
 
 def _redraw():
-    if _streaming:
+    if _owner is not None:
         return
     if _screen == idle.OFF:
         _power(False)

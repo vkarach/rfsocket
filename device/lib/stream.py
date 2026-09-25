@@ -44,12 +44,9 @@ async def _reply(writer, status):
 
 async def _serve_frames(reader):
     global _current
-    # Cancel instead of closing the old socket: cancel() unhooks the task from the IO poller.
-    if _current is not None:
-        _current.cancel()
     task = asyncio.current_task()
     _current = task
-    display.begin_stream()
+    display.begin_stream(task)
     try:
         while True:
             if not await _read_exact(reader, _frame_view):
@@ -60,7 +57,7 @@ async def _serve_frames(reader):
     finally:
         if _current is task:
             _current = None
-            display.end_stream()
+        display.end_stream(task)
 
 
 async def _serve_store(reader, writer):

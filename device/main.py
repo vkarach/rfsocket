@@ -8,6 +8,8 @@ import config
 import display
 import dy08
 import idle
+import player
+import rf
 import stream
 
 HTTP_PORT = 80
@@ -30,6 +32,7 @@ wall_clock = clock.Clock(time.ticks_diff)
 idle_timer = idle.IdleTimer(config.CLOCK_AFTER_S * 1000, config.SLEEP_AFTER_S * 1000,
                             time.ticks_ms(), time.ticks_diff)
 clip_store = clips.ClipStore(CLIPS_ROOT, config.CLIP_BUDGET, config.CLIP_MAX_COUNT, config.CLIP_AUTO_MAX)
+player.init(clip_store)
 
 
 def connect_wifi():
@@ -49,11 +52,15 @@ async def switch(name, action):
 
 
 async def handle(path):
+    path, query = (path.split("?", 1) + [""])[:2]
     parts = [part for part in path.split("/") if part]
 
     if parts == ["state"]:
         return " ".join("%s:%s" % (name, "on" if states[name] else "off")
                         for name in sorted(states))
+
+    if parts and parts[0] == "clips":
+        return await handle_clips(parts[1:], query.split("&"))
 
     if len(parts) != 2:
         return None
@@ -77,6 +84,37 @@ async def handle(path):
     display.show(ip, states)
     await switch(name, action)
     return "on" if action else "off"
+
+
+def list_clips():
+    # Name goes last because it may contain spaces.
+    return "\n".join("%s %d %d %s %s" % (entry["id"], entry["frames"], (entry["size"] + 1023) // 1024,
+                                         "*" if entry["star"] else "-", entry["name"])
+                     for entry in clip_store.list())
+
+
+async def handle_clips(parts, flags):
+    if not parts:
+        return list_clips()
+    if parts == ["stop"]:
+        player.stop()
+        return "stopped"
+    if len(parts) != 2:
+        return None
+
+    clip_id, command = parts[0], parts[1].lower()
+    if command == "play":
+        once = "once" in flags
+        if not player.play(clip_id, once):
+            return None
+        return "playing %s%s" % (clip_id, " once" if once else "")
+    if command not in ("star", "unstar", "delete"):
+        return None
+    if command == "delete" and clip_store.playing == clip_id:
+        player.stop()
+    async with rf.lock:
+        done = getattr(clip_store, command)(clip_id)
+    return "%s %s" % (command, clip_id) if done else None
 
 
 def pin_screen(command):
