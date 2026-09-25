@@ -2,6 +2,7 @@ import asyncio
 import network
 import time
 
+import clips
 import clock
 import config
 import display
@@ -10,6 +11,7 @@ import idle
 import stream
 
 HTTP_PORT = 80
+CLIPS_ROOT = "/clips"
 SCREEN_TICK_S = 1
 NTP_INTERVAL_S = 6 * 3600
 NTP_RETRY_S = 60
@@ -27,6 +29,7 @@ ip = ""
 wall_clock = clock.Clock(time.ticks_diff)
 idle_timer = idle.IdleTimer(config.CLOCK_AFTER_S * 1000, config.SLEEP_AFTER_S * 1000,
                             time.ticks_ms(), time.ticks_diff)
+clip_store = clips.ClipStore(CLIPS_ROOT, config.CLIP_BUDGET, config.CLIP_MAX_COUNT, config.CLIP_AUTO_MAX)
 
 
 def connect_wifi():
@@ -145,7 +148,7 @@ async def main():
     print("ip:", ip)
     display.show(ip, states)
     await asyncio.start_server(serve_client, "0.0.0.0", HTTP_PORT)
-    await stream.serve(config.STREAM_PORT)
+    await stream.serve(config.STREAM_PORT, clip_store)
     asyncio.create_task(ntp_loop())
     await screen_loop()
 

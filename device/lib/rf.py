@@ -8,6 +8,8 @@ POLL_MS = 5
 DONE_TIMEOUT_MS = 1000
 
 rmt = RMT(0, pin=Pin(23), clock_div=80)
+# Held by RF transmissions and by flash writes: a flash write stalls interrupts and would corrupt a pulse train.
+lock = asyncio.Lock()
 
 async def send_pulses(pulses, repeat=8):
     for _ in range(repeat):

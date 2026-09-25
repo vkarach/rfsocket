@@ -1,6 +1,6 @@
 import asyncio
 
-from rf import send_pulses
+import rf
 
 # Protocol timings in microseconds, taken from the solight-dy08 library
 FIRST_SHORT_US = 400
@@ -14,8 +14,6 @@ SECOND_HEADER_US = 7292
 SECOND_REPEATS = 2
 
 GAP_US = 59400
-
-_lock = asyncio.Lock()
 
 
 def _add_byte(pulses, byte, short_us, long_us):
@@ -57,8 +55,8 @@ def build_frame(address, action):
 
 
 async def _transmit(pulses):
-    async with _lock:
-        await send_pulses(pulses, repeat=1)
+    async with rf.lock:
+        await rf.send_pulses(pulses, repeat=1)
         await asyncio.sleep_ms(GAP_US // 1000)
 
 
