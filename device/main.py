@@ -39,6 +39,8 @@ player.init(clip_store)
 def connect_wifi():
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
+    # Modem sleep holds inbound packets until the next beacon, turning a steady stream into bursts.
+    wlan.config(pm=network.WLAN.PM_NONE)
     if not wlan.isconnected():
         wlan.ifconfig((config.STATIC_IP, config.SUBNET_MASK, config.GATEWAY, config.DNS))
         wlan.connect(config.WIFI_SSID, config.WIFI_PASSWORD)
