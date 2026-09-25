@@ -31,12 +31,11 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,54 +49,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
-import java.io.IOException
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClipsScreen(client: SocketClient) {
-    var clips by remember { mutableStateOf<List<Clip>?>(null) }
+fun ClipsScreen(model: DeviceModel, state: DeviceState) {
     var starredOnly by rememberSaveable { mutableStateOf(false) }
-    var refreshing by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Clip?>(null) }
     val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
-    fun notify(message: String) {
-        scope.launch { snackbar.showSnackbar(message) }
+    LaunchedEffect(model) {
+        model.messages.collect { snackbar.showSnackbar(it) }
     }
 
-    suspend fun refresh() {
-        refreshing = true
-        try {
-            clips = client.clips()
-        } catch (e: IOException) {
-            notify("Device unreachable")
-        } finally {
-            refreshing = false
-        }
-    }
-
-    fun act(action: suspend () -> Unit) {
-        scope.launch {
-            try {
-                action()
-            } catch (e: NotFoundException) {
-                notify("Clip not found")
-            } catch (e: IOException) {
-                notify("Device unreachable")
-                return@launch
-            }
-            refresh()
-        }
-    }
-
-    LifecycleResumeEffect(Unit) {
-        val job = scope.launch { refresh() }
-        onPauseOrDispose { job.cancel() }
-    }
-
+    val clips = state.clips
     val playing = clips?.firstOrNull { it.playing }
     val visible = clips?.filter { !starredOnly || it.starred }
 
@@ -136,40 +100,32 @@ fun ClipsScreen(client: SocketClient) {
                 ) { Text(label) }
             }
         }
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = { scope.launch { refresh() } },
+        LazyColumn(
             modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (visible != null && visible.isEmpty()) {
-                    item {
-                        Text(
-                            text = if (starredOnly) "No starred clips" else "No clips yet",
-                            color = Palette.Muted,
-                            fontSize = 15.sp,
-                            modifier = Modifier
-                                .fillParentMaxSize()
-                                .padding(top = 48.dp),
-                        )
-                    }
-                }
-                items(visible.orEmpty(), key = { it.id }) { clip ->
-                    ClipRow(
-                        clip = clip,
-                        onPlay = { once -> act { client.play(clip.id, once) } },
-                        onStar = { act { client.star(clip.id, !clip.starred) } },
-                        onDelete = { pendingDelete = clip },
+            if (visible != null && visible.isEmpty()) {
+                item {
+                    Text(
+                        text = if (starredOnly) "No starred clips" else "No clips yet",
+                        color = Palette.Muted,
+                        fontSize = 15.sp,
+                        modifier = Modifier.padding(top = 48.dp),
                     )
                 }
             }
+            items(visible.orEmpty(), key = { it.id }) { clip ->
+                ClipRow(
+                    clip = clip,
+                    onPlay = { once -> model.play(clip.id, once) },
+                    onStar = { model.star(clip.id, !clip.starred) },
+                    onDelete = { pendingDelete = clip },
+                )
+            }
         }
         if (playing != null) {
-            NowPlaying(clip = playing, onStop = { act { client.stop() } })
+            NowPlaying(clip = playing, onStop = { model.stop() })
         }
         SnackbarHost(snackbar)
     }
@@ -182,7 +138,7 @@ fun ClipsScreen(client: SocketClient) {
             confirmButton = {
                 TextButton(onClick = {
                     pendingDelete = null
-                    act { client.delete(clip.id) }
+                    model.delete(clip.id)
                 }) { Text("Delete", color = Palette.Error) }
             },
             dismissButton = {

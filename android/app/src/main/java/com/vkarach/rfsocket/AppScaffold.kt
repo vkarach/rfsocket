@@ -1,10 +1,13 @@
 package com.vkarach.rfsocket
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -18,6 +21,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 private enum class Tab(val label: String, @DrawableRes val icon: Int) {
     Socket("Socket", R.drawable.ic_power),
@@ -25,13 +33,24 @@ private enum class Tab(val label: String, @DrawableRes val icon: Int) {
 }
 
 @Composable
-fun AppScaffold(client: SocketClient, channel: String) {
+fun AppScaffold(model: DeviceModel) {
     var tab by rememberSaveable { mutableStateOf(Tab.Socket) }
+    val state by model.state.collectAsStateWithLifecycle()
+
+    LifecycleResumeEffect(model) {
+        model.startPolling()
+        onPauseOrDispose { model.stopPolling() }
+    }
 
     Scaffold(
         containerColor = Palette.Background,
-        // Screens draw under the status bar themselves; only the bottom bar's space is reserved here.
+        // Screens draw under the status bar themselves; only the bars' space is reserved here.
         contentWindowInsets = WindowInsets(0),
+        topBar = {
+            if (state.reachable == false) {
+                UnreachableBanner()
+            }
+        },
         bottomBar = {
             NavigationBar(containerColor = Palette.Surface) {
                 Tab.entries.forEach { entry ->
@@ -54,9 +73,24 @@ fun AppScaffold(client: SocketClient, channel: String) {
     ) { padding ->
         Box(modifier = Modifier.padding(padding).consumeWindowInsets(padding)) {
             when (tab) {
-                Tab.Socket -> ToggleScreen(client = client, channel = channel)
-                Tab.Clips -> ClipsScreen(client = client)
+                Tab.Socket -> SocketScreen(model = model, state = state)
+                Tab.Clips -> ClipsScreen(model = model, state = state)
             }
         }
     }
+}
+
+@Composable
+private fun UnreachableBanner() {
+    Text(
+        text = "Device unreachable - retrying",
+        color = Palette.Error,
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Palette.Surface)
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+    )
 }

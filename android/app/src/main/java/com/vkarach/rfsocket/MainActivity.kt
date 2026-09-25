@@ -6,13 +6,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 
 private const val BASE_URL = "http://192.168.0.240"
-private const val CHANNEL = "a"
 
 class MainActivity : ComponentActivity() {
 
-    private val client = SocketClient(BASE_URL)
+    private val model by viewModels<DeviceModel> {
+        viewModelFactory { initializer { DeviceModel(SocketClient(BASE_URL)) } }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -22,7 +26,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             RfSocketTheme {
-                AppScaffold(client = client, channel = CHANNEL)
+                AppScaffold(model = model)
             }
         }
     }

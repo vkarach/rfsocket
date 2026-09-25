@@ -8,31 +8,34 @@ import kotlinx.coroutines.withContext
 
 class NotFoundException : IOException("not found")
 
-class SocketClient(private val baseUrl: String) {
+class SocketClient(private val baseUrl: String) : DeviceApi {
 
-    suspend fun toggle(channel: String): Boolean = request("/$channel/toggle") == "on"
+    override suspend fun states(): Map<String, Boolean> = parseStates(request("/state"))
 
-    suspend fun state(channel: String): Boolean {
-        val entry = request("/state").split(" ").firstOrNull { it.startsWith("$channel:") }
-            ?: throw IOException("channel $channel not reported")
-        return entry.substringAfter(":") == "on"
+    override suspend fun set(channel: String, on: Boolean): Boolean =
+        request("/$channel/" + if (on) "on" else "off") == "on"
+
+    override suspend fun screen(): ScreenMode = parseScreenMode(request("/screen"))
+
+    override suspend fun pinScreen(mode: ScreenMode) {
+        request("/screen/${mode.path}")
     }
 
-    suspend fun clips(): List<Clip> = parseClips(request("/clips"))
+    override suspend fun clips(): List<Clip> = parseClips(request("/clips"))
 
-    suspend fun play(id: String, once: Boolean) {
+    override suspend fun play(id: String, once: Boolean) {
         request("/clips/$id/play" + if (once) "?once" else "")
     }
 
-    suspend fun stop() {
+    override suspend fun stop() {
         request("/clips/stop")
     }
 
-    suspend fun star(id: String, starred: Boolean) {
+    override suspend fun star(id: String, starred: Boolean) {
         request("/clips/$id/" + if (starred) "star" else "unstar")
     }
 
-    suspend fun delete(id: String) {
+    override suspend fun delete(id: String) {
         request("/clips/$id/delete")
     }
 
