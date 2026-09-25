@@ -8,6 +8,13 @@ DNS = "192.168.1.1"
 
 STREAM_PORT = 7000
 
+NTP_HOST = "pool.ntp.org"
+TZ_OFFSET_S = 3600
+TZ_EU_DST = True
+
+CLOCK_AFTER_S = 60
+SLEEP_AFTER_S = 300
+
 # (24-bit first word, 32-bit second word) per action, captured with sniff.learn()
 CHANNELS = {
     "a": {"on": (0x000000, 0x00000000), "off": (0x000000, 0x00000000)},

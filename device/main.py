@@ -2,12 +2,17 @@ import asyncio
 import network
 import time
 
+import clock
 import config
 import display
 import dy08
+import idle
 import stream
 
 HTTP_PORT = 80
+SCREEN_TICK_S = 1
+NTP_INTERVAL_S = 6 * 3600
+NTP_RETRY_S = 60
 
 RESPONSE_TEMPLATE = (
     "HTTP/1.0 {status}\r\n"
@@ -19,6 +24,9 @@ RESPONSE_TEMPLATE = (
 
 states = {name: 0 for name in config.CHANNELS}
 ip = ""
+wall_clock = clock.Clock(time.ticks_diff)
+idle_timer = idle.IdleTimer(config.CLOCK_AFTER_S * 1000, config.SLEEP_AFTER_S * 1000,
+                            time.ticks_ms(), time.ticks_diff)
 
 
 def connect_wifi():
@@ -48,6 +56,8 @@ async def handle(path):
         return None
 
     name, command = parts[0].lower(), parts[1].lower()
+    if name == "screen":
+        return pin_screen(command)
     if name not in config.CHANNELS:
         return None
 
@@ -66,7 +76,52 @@ async def handle(path):
     return "on" if action else "off"
 
 
+def pin_screen(command):
+    if command == "auto":
+        idle_timer.pin(None)
+        body = "screen: auto (idle timers)"
+    elif command in idle.SCREENS:
+        idle_timer.pin(command)
+        body = "screen pinned: %s" % command
+    else:
+        return None
+    wake()
+    return body
+
+
+def wake():
+    now = time.ticks_ms()
+    idle_timer.touch(now)
+    display.set_screen(idle_timer.screen(now))
+
+
+async def screen_loop():
+    while True:
+        now = time.ticks_ms()
+        if display.streaming():
+            idle_timer.touch(now)
+        unix = wall_clock.unix(now)
+        display.set_time(None if unix is None else clock.local_hm(unix, config.TZ_OFFSET_S, config.TZ_EU_DST))
+        display.set_screen(idle_timer.screen(now))
+        await asyncio.sleep(SCREEN_TICK_S)
+
+
+async def ntp_loop():
+    while True:
+        # DNS lookup inside fetch_unix blocks the loop, so never sync mid-stream.
+        if display.streaming():
+            await asyncio.sleep(NTP_RETRY_S)
+            continue
+        unix = await clock.fetch_unix(config.NTP_HOST)
+        if unix is None:
+            await asyncio.sleep(NTP_RETRY_S)
+        else:
+            wall_clock.set(unix, time.ticks_ms())
+            await asyncio.sleep(NTP_INTERVAL_S)
+
+
 async def serve_client(reader, writer):
+    wake()
     try:
         request = (await reader.read(256)).decode()
         path = request.split(" ")[1] if " " in request else ""
@@ -91,8 +146,8 @@ async def main():
     display.show(ip, states)
     await asyncio.start_server(serve_client, "0.0.0.0", HTTP_PORT)
     await stream.serve(config.STREAM_PORT)
-    while True:
-        await asyncio.sleep(3600)
+    asyncio.create_task(ntp_loop())
+    await screen_loop()
 
 
 asyncio.run(main())
