@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rfsocket</title>
+<style>
+  :root {
+    --bg: #0E1116;
+    --bg-top: #161B22;
+    --surface: #1B212B;
+    --outline: #2C3440;
+    --muted: #8B95A5;
+    --text: #E6EAF0;
+    --amber: #FFB547;
+    --orange: #FF8A3D;
+    --on-amber: #2A1A05;
+    --error: #FF6B6B;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { overflow-y: auto; overflow-x: hidden; }
+
+  html { background: var(--bg); }
+
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, var(--bg-top), var(--bg) 260px);
+    color: var(--text);
+    font-family: "Segoe UI", sans-serif;
+    font-size: 14px;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 24px;
+    min-height: 100vh;
+  }
+
+  .label {
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .channel-picker {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 8px;
+    position: relative;
+  }
+
+  .channel-picker .arrow {
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  .channel-menu {
+    position: absolute;
+    top: 32px;
+    left: 50%;
+    background: var(--surface);
+    border: 1px solid var(--outline);
+    border-radius: 8px;
+    padding: 6px 0;
+    min-width: 110px;
+    z-index: 10;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -6px) scale(0.96);
+    transition: opacity 0.15s, transform 0.15s;
+  }
+
+  .channel-menu.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, 0) scale(1);
+  }
+
+  .channel-menu .item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 14px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+
+  .channel-menu .item:hover { background: var(--outline); }
+
+  .channel-menu .item.selected { color: var(--amber); }
+
+  .channel-menu .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--outline);
+    transition: background 0.2s;
+  }
+
+  .channel-menu .dot.on { background: var(--amber); }
+
+  .power-btn {
+    flex-shrink: 0;
+    position: relative;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: linear-gradient(160deg, var(--surface), var(--bg));
+    border: 1px solid var(--outline);
+    box-shadow: 0 0 0 0 rgba(255,181,71,0);
+    transition: background 0.3s, border-color 0.3s, box-shadow 0.4s, transform 0.1s;
+  }
+
+  .power-btn:active { transform: scale(0.95); }
+
+  .power-btn.on {
+    background: linear-gradient(160deg, var(--amber), var(--orange));
+    border-color: var(--amber);
+    box-shadow: 0 0 36px 6px rgba(255,181,71,0.35);
+  }
+
+  .power-btn svg {
+    width: 56px;
+    height: 56px;
+    stroke: var(--muted);
+    transition: stroke 0.3s, opacity 0.2s;
+  }
+
+  .power-btn.on svg { stroke: var(--on-amber); }
+
+  .power-btn.busy svg { opacity: 0.3; }
+
+  .spinner {
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    width: 170px;
+    height: 170px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    border-top-color: var(--amber);
+    opacity: 0;
+    pointer-events: none;
+    animation: spin 0.9s linear infinite;
+    transition: opacity 0.15s;
+  }
+
+  .power-btn.busy .spinner { opacity: 1; }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .state-text {
+    margin-top: 10px;
+    font-size: 26px;
+    font-weight: 600;
+    transition: color 0.3s;
+  }
+
+  .section {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+  }
+
+  .segmented {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    width: 100%;
+  }
+
+  .segmented button {
+    flex: 1;
+    padding: 7px 0;
+    border-radius: 8px;
+    border: 1px solid var(--outline);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+  }
+
+  .segmented button.active {
+    background: var(--amber);
+    color: var(--on-amber);
+    border-color: var(--amber);
+    font-weight: 600;
+  }
+
+  .brightness-slider { width: 100%; margin-top: 10px; accent-color: var(--amber); }
+
+  .brightness-value {
+    align-self: flex-end;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  .media-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+    width: 100%;
+  }
+
+  button.action {
+    background: var(--amber);
+    color: var(--on-amber);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--outline);
+  }
+
+  .footer-link {
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .footer-link:hover { color: var(--amber); }
+
+  .footer-host {
+    color: var(--outline);
+    font-size: 11px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .footer-host.error { color: var(--error); }
+
+  .nav-toggle {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    background: transparent;
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+
+  .nav-toggle:hover { border-color: var(--amber); color: var(--amber); }
+
+  .view { display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+  .view.hidden { display: none; }
+
+  .history-list {
+    width: 100%;
+    height: 152px;
+    overflow-y: auto;
+    margin-top: 8px;
+    border: 1px solid var(--outline);
+    border-radius: 8px;
+  }
+
+  .history-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--outline);
+    cursor: pointer;
+  }
+
+  .history-item:last-child { border-bottom: none; }
+
+  .history-item:hover { background: var(--outline); }
+
+  .history-item.playing .history-name { color: var(--amber); }
+
+  .history-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    min-width: 0;
+  }
+
+  .history-meta {
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .history-star, .history-delete {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+
+  .history-star.on { color: var(--amber); }
+
+  .history-star:hover, .history-delete:hover { color: var(--text); }
+
+  .history-empty {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <button class="nav-toggle" id="navToggle">Media &rsaquo;</button>
+
+  <div class="view" id="mainView">
+    <div class="channel-picker" id="channelPicker">
+      <span class="label" id="channelLabel">CHANNEL --</span>
+      <span class="arrow">&#9662;</span>
+      <div class="channel-menu" id="channelMenu"></div>
+    </div>
+
+    <div class="power-btn" id="powerBtn">
+      <div class="spinner"></div>
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2v8"></path>
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+      </svg>
+    </div>
+    <div class="state-text" id="stateText">--</div>
+
+    <div class="section">
+      <div class="label">SCREEN</div>
+      <div class="segmented" id="screen"></div>
+    </div>
+
+    <div class="section">
+      <div class="label" style="align-self:flex-start;">BRIGHTNESS</div>
+      <input type="range" class="brightness-slider" id="brightness" min="0" max="255" value="255">
+      <div class="brightness-value" id="brightnessValue">255</div>
+    </div>
+  </div>
+
+  <div class="view hidden" id="mediaView">
+    <div class="label" style="align-self:flex-start; margin-top:6px;">STREAM TO DEVICE</div>
+    <div class="media-row" style="margin-top:14px;">
+      <button class="action" id="streamBtn">Stream...</button>
+      <label class="checkbox-row"><input type="checkbox" id="loop"> Loop</label>
+      <label class="checkbox-row"><input type="checkbox" id="keep"> Keep</label>
+      <label class="checkbox-row"><input type="checkbox" id="invert"> Invert</label>
+    </div>
+    <div class="label" style="align-self:flex-start; margin-top:20px;">SCALE</div>
+    <div class="segmented" id="scale" style="margin-top:8px;"></div>
+    <div class="label" style="align-self:flex-start; margin-top:18px;">DITHER</div>
+    <div class="segmented" id="dither" style="margin-top:8px;"></div>
+
+    <div class="label" style="align-self:flex-start; margin-top:18px;">DEVICE HISTORY</div>
+    <div class="history-list" id="historyList"></div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-link" id="githubLink">rfsocket on GitHub</span>
+    <span class="footer-host" id="footerHost"></span>
+  </div>
+
+<script>
+const CHANNELS = ["a", "b", "c"];
+const SCREEN_MODES = ["auto", "status", "clock", "off"];
+const SCALE_MODES = ["fit", "fill"];
+const DITHER_MODES = ["auto", "fs", "bayer", "none"];
+const GAMMA = 2.2;
+
+let selectedScreen = "auto";
+let selectedChannel = "a";
+let selectedScale = "fit";
+let selectedDither = "auto";
+let channelState = {};
+let brightnessDebounce = null;
+
+function rawToPosition(raw) { return Math.round(Math.pow(raw / 255, 1 / GAMMA) * 255); }
+function positionToRaw(pos) { return Math.round(Math.pow(pos / 255, GAMMA) * 255); }
+
+let deviceHost = "";
+
+function showError(message) {
+  const footer = document.getElementById("footerHost");
+  footer.classList.toggle("error", !!message);
+  footer.textContent = message || deviceHost;
+  footer.title = message || "";
+}
+
+function buildChannelMenu() {
+  const menu = document.getElementById("channelMenu");
+  menu.innerHTML = "";
+  for (const ch of CHANNELS) {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.dataset.ch = ch;
+    item.innerHTML = "<span>" + ch.toUpperCase() + "</span><span class=\"dot\"></span>";
+    item.addEventListener("click", () => {
+      selectedChannel = ch;
+      menu.classList.remove("open");
+      renderChannel();
+    });
+    menu.appendChild(item);
+  }
+}
+
+document.getElementById("channelPicker").addEventListener("click", (e) => {
+  document.getElementById("channelMenu").classList.toggle("open");
+  e.stopPropagation();
+});
+document.addEventListener("click", () => document.getElementById("channelMenu").classList.remove("open"));
+
+function buildScreen() {
+  const root = document.getElementById("screen");
+  root.innerHTML = "";
+  for (const mode of SCREEN_MODES) {
+    const btn = document.createElement("button");
+    btn.textContent = mode;
+    btn.dataset.mode = mode;
+    btn.addEventListener("click", () => pinScreen(mode));
+    root.appendChild(btn);
+  }
+}
+
+function buildSegmentGroup(rootId, values, selectedRef, onPick) {
+  const root = document.getElementById(rootId);
+  root.innerHTML = "";
+  for (const value of values) {
+    const btn = document.createElement("button");
+    btn.textContent = value;
+    btn.dataset.value = value;
+    btn.classList.toggle("active", value === selectedRef());
+    btn.addEventListener("click", () => onPick(value));
+    root.appendChild(btn);
+  }
+}
+
+function renderSegmentGroup(rootId, selected) {
+  document.querySelectorAll("#" + rootId + " button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.value === selected);
+  });
+}
+
+function renderChannel() {
+  const on = channelState[selectedChannel] === "on";
+  document.getElementById("channelLabel").textContent = "CHANNEL " + selectedChannel.toUpperCase();
+  document.getElementById("powerBtn").classList.toggle("on", on);
+  document.getElementById("stateText").textContent = on ? "On" : "Off";
+  document.querySelectorAll("#channelMenu .item").forEach(item => {
+    item.classList.toggle("selected", item.dataset.ch === selectedChannel);
+    item.querySelector(".dot").classList.toggle("on", channelState[item.dataset.ch] === "on");
+  });
+}
+
+function renderScreen() {
+  document.querySelectorAll("#screen button").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.mode === selectedScreen);
+  });
+}
+
+async function toggleChannel() {
+  const btn = document.getElementById("powerBtn");
+  btn.classList.add("busy");
+  try {
+    const result = await pywebview.api.toggle(selectedChannel);
+    if (!result.ok) return showError(result.error);
+    channelState[selectedChannel] = result.state;
+    renderChannel();
+    showError("");
+  } finally {
+    btn.classList.remove("busy");
+  }
+}
+
+async function pinScreen(mode) {
+  const result = await pywebview.api.pin_screen(mode);
+  if (!result.ok) return showError(result.error);
+  selectedScreen = mode;
+  renderScreen();
+  showError("");
+}
+
+function onBrightnessInput(event) {
+  const position = Number(event.target.value);
+  const raw = positionToRaw(position);
+  document.getElementById("brightnessValue").textContent = raw;
+  clearTimeout(brightnessDebounce);
+  brightnessDebounce = setTimeout(async () => {
+    const result = await pywebview.api.set_brightness(raw);
+    if (!result.ok) showError(result.error);
+  }, 80);
+}
+
+async function streamFile() {
+  const path = await pywebview.api.browse_file();
+  if (!path) return;
+  const loop = document.getElementById("loop").checked;
+  const keep = document.getElementById("keep").checked;
+  const invert = document.getElementById("invert").checked;
+  const result = await pywebview.api.stream(path, loop, keep, selectedScale, invert, selectedDither);
+  if (!result.ok) showError(result.error);
+}
+
+async function loadHistory() {
+  const list = document.getElementById("historyList");
+  const result = await pywebview.api.list_clips();
+  if (!result.ok) {
+    list.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = result.error;
+    list.appendChild(empty);
+    return;
+  }
+  list.innerHTML = "";
+  if (!result.clips.length) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = "No clips stored";
+    list.appendChild(empty);
+    return;
+  }
+  for (const clipItem of result.clips) {
+    const row = document.createElement("div");
+    row.className = "history-item" + (clipItem.playing ? " playing" : "");
+
+    const name = document.createElement("span");
+    name.className = "history-name";
+    name.textContent = clipItem.name || clipItem.id;
+
+    const meta = document.createElement("span");
+    meta.className = "history-meta";
+    meta.textContent = clipItem.size_kb + "KB";
+
+    const star = document.createElement("span");
+    star.className = "history-star" + (clipItem.star ? " on" : "");
+    star.textContent = "★";
+
+    const del = document.createElement("span");
+    del.className = "history-delete";
+    del.textContent = "✕";
+
+    row.append(name, meta, star, del);
+    row.addEventListener("click", () => clipItem.playing ? stopClip() : playClip(clipItem.id));
+    star.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const result = await pywebview.api.star_clip(clipItem.id, !clipItem.star);
+      if (!result.ok) return showError(result.error);
+      loadHistory();
+    });
+    del.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const result = await pywebview.api.delete_clip(clipItem.id);
+      if (!result.ok) return showError(result.error);
+      loadHistory();
+    });
+    list.appendChild(row);
+  }
+}
+
+async function playClip(id) {
+  const result = await pywebview.api.play_clip(id, false);
+  if (!result.ok) return showError(result.error);
+  showError("");
+  loadHistory();
+}
+
+async function stopClip() {
+  const result = await pywebview.api.stop_clip();
+  if (!result.ok) return showError(result.error);
+  showError("");
+  loadHistory();
+}
+
+async function refresh() {
+  const state = await pywebview.api.state();
+  if (!state.ok) {
+    showError(state.error);
+    return;
+  }
+  channelState = state.channels;
+  selectedScreen = state.screen;
+  renderChannel();
+  renderScreen();
+  const slider = document.getElementById("brightness");
+  slider.value = rawToPosition(state.brightness);
+  document.getElementById("brightnessValue").textContent = state.brightness;
+  deviceHost = state.host;
+  showError("");
+}
+
+buildChannelMenu();
+buildScreen();
+buildSegmentGroup("scale", SCALE_MODES, () => selectedScale, (value) => {
+  selectedScale = value;
+  renderSegmentGroup("scale", selectedScale);
+});
+buildSegmentGroup("dither", DITHER_MODES, () => selectedDither, (value) => {
+  selectedDither = value;
+  renderSegmentGroup("dither", selectedDither);
+});
+document.getElementById("powerBtn").addEventListener("click", toggleChannel);
+document.getElementById("brightness").addEventListener("input", onBrightnessInput);
+document.getElementById("streamBtn").addEventListener("click", streamFile);
+document.getElementById("githubLink").addEventListener("click", () => pywebview.api.open_github());
+
+let onMediaView = false;
+document.getElementById("navToggle").addEventListener("click", () => {
+  onMediaView = !onMediaView;
+  document.getElementById("mainView").classList.toggle("hidden", onMediaView);
+  document.getElementById("mediaView").classList.toggle("hidden", !onMediaView);
+  document.getElementById("navToggle").textContent = onMediaView ? "‹ Back" : "Media ›";
+  if (onMediaView) loadHistory();
+});
+
+window.addEventListener("pywebviewready", refresh);
+</script>
+</body>
+</html>
