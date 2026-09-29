@@ -23,19 +23,29 @@ def play(clip_id, once):
     global _task
     if _store.get(clip_id) is None:
         return False
-    stop()
+    _cancel()
     # Bookkeeping is synchronous: a task cancelled before its first run never reaches its finally.
     _task = asyncio.create_task(_run(clip_id, once))
+    # Claim the display now, else the old task's end_stream redraws the idle screen between clips.
+    display.begin_stream(_task)
     _store.playing = clip_id
     return True
 
 
 def stop():
+    task = _cancel()
+    if task is not None:
+        display.end_stream(task)
+
+
+def _cancel():
     global _task
-    if _task is not None:
-        _task.cancel()
+    task = _task
+    if task is not None:
+        task.cancel()
         _task = None
         _store.playing = None
+    return task
 
 
 async def _play_pass(clip_id):
@@ -55,7 +65,6 @@ async def _play_pass(clip_id):
 async def _run(clip_id, once):
     global _task
     task = asyncio.current_task()
-    display.begin_stream(task)
     try:
         # An empty clip ends the loop instead of spinning without ever yielding.
         while await _play_pass(clip_id) and not once:
